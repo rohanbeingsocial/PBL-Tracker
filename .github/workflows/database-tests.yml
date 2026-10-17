@@ -1,0 +1,45 @@
+name: database tests
+
+on:
+  schedule:
+    - cron: "0 18 * * *"   # 11:30 pm IST, after the day's work is pushed
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust     # throwaway database that lives for one CI run
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install (no ML model needed for the database tests)
+        run: pip install "psycopg[binary]==3.3.6" psycopg-pool==3.3.3 python-dotenv==1.2.4 pytest==9.1.1
+      - name: Make one-off app and sample-account passwords
+        run: |
+          password=$(openssl rand -hex 16)
+          seed=$(openssl rand -hex 16)
+          echo "::add-mask::$password"
+          echo "::add-mask::$seed"
+          echo "PBL_APP_PASSWORD=$password" >> "$GITHUB_ENV"
+          echo "SEED_PASSWORD=$seed" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=postgresql://pbl_app:$password@localhost:5432/postgres" >> "$GITHUB_ENV"
+          echo "ADMIN_DATABASE_URL=postgresql://postgres@localhost:5432/postgres" >> "$GITHUB_ENV"
+      - name: Build the database and load the sample data
+        run: |
+          python -m scripts.setup_db
+          python -m scripts.load_data
+      - name: Run the tests
+        run: pytest -v
