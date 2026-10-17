@@ -1,0 +1,33 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# editors / OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# local notes, not part of the project
+.project-memory/
+
+# paste files for the Supabase SQL editor; 1_schema.sql holds the pbl_app password hash
+supabase-paste/
+
+# front end: packages and the build
+web/node_modules/
+web/dist/
+
+# tool caches
+.ruff_cache/
+
+# uploaded reports and presentations when no storage bucket is set
+uploads/
+
+# design export
+*.zip

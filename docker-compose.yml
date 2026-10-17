@@ -1,0 +1,14 @@
+# Local PostgreSQL 17 with pgvector, for development and running the tests.
+# The demo itself uses Supabase. Start with: docker compose up -d
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg17
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:5434:5432"   # localhost only, so the database is not reachable from the network
+    volumes:
+      - pbl_data:/var/lib/postgresql/data
+
+volumes:
+  pbl_data:
