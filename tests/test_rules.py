@@ -2,7 +2,7 @@
 from tests.helpers import error_of, new_project, project_id, set_embedding, unit_vector, user_id
 
 ROHAN, OM, YASH = "1032240101", "1032230011", "1032230013"
-KULKARNI = "akulkarni@example.edu"
+KULKARNI = "akulkarni@mitwpu.edu.in"
 
 
 def add_member(conn, project, login):
@@ -57,10 +57,16 @@ def test_each_subject_has_its_own_maximum(db):
     assert error_of(db, "UPDATE pbl.projects SET marks = -1 WHERE project_id = %s", (theory,)).sqlstate == "23514"
 
 
-def test_proposals_cannot_be_marked(db):
-    mess = project_id(db, "Mess Meal Pre-Booking and Feedback")
+def test_only_approved_projects_can_be_marked(db):
+    mess = project_id(db, "Mess Meal Pre-Booking and Feedback")              # still waiting for review
     err = error_of(db, "UPDATE pbl.projects SET marks = 10 WHERE project_id = %s", (mess,))
-    assert err.diag.message_primary == "Only approved or completed projects can be marked (this one is proposed)"
+    assert err.diag.message_primary == "Only approved projects can be marked (this one is submitted)"
+
+
+def test_accounts_need_a_college_email(db):
+    insert = """INSERT INTO pbl.users (name, email, role, password_hash) VALUES ('Outsider', %s, 'faculty', '$2a$11$x')"""
+    assert error_of(db, insert, ("someone@gmail.com",)).diag.constraint_name == "college_email"
+    db.execute(insert, ("new.faculty@mitwpu.edu.in",))
 
 
 def test_academic_year_format_and_sequence(db):
@@ -89,8 +95,8 @@ def test_deleting_a_project_removes_its_members_links_tags_and_files(db):
     lab = project_id(db, "ECE Lab Component Tracker")
     db.execute("INSERT INTO pbl.project_links (project_id, label, url) VALUES (%s, 'Demo', 'https://example.com/demo')", (lab,))
     db.execute("""INSERT INTO pbl.project_files (project_id, kind, file_name, storage_path, size_bytes, uploaded_by)
-                  VALUES (%s, 'report', 'report.pdf', 'test/report.pdf', 1000, %s)""", (lab, user_id(db, OM)))
-    db.execute("DELETE FROM pbl.projects WHERE project_id = %s", (lab,))
+                  VALUES (%s, 'ppt', 'slides.pptx', 'test/slides.pptx', 1000, %s)""", (lab, user_id(db, OM)))
+    db.execute("DELETE FROM pbl.projects WHERE project_id = %s", (lab,))    # the report goes too, with the project
     for table in ("project_members", "project_links", "project_tags", "project_files"):
         left = db.execute(f"SELECT count(*) AS n FROM pbl.{table} WHERE project_id = %s", (lab,)).fetchone()
         assert left["n"] == 0, table
@@ -100,10 +106,43 @@ def test_a_user_still_in_a_team_cannot_be_deleted(db):
     assert error_of(db, "DELETE FROM pbl.users WHERE prn = %s", (ROHAN,)).sqlstate == "23503"
 
 
-def test_status_only_moves_forward(db):
+def test_a_decision_is_made_once_and_dated(db):
     library = project_id(db, "College Library Management")
-    err = error_of(db, "UPDATE pbl.projects SET status = 'proposed' WHERE project_id = %s", (library,))
-    assert err.diag.message_primary == "Status cannot change from completed to proposed"
+    err = error_of(db, "UPDATE pbl.projects SET status = 'submitted' WHERE project_id = %s", (library,))
+    assert err.diag.message_primary == "Status cannot change from approved to submitted"
+    err = error_of(db, "UPDATE pbl.projects SET status = 'rejected' WHERE project_id = %s", (library,))
+    assert err.diag.message_primary == "Status cannot change from approved to rejected"
+
+    mess = project_id(db, "Mess Meal Pre-Booking and Feedback")
+    set_embedding(db, mess, unit_vector(11))
+    db.execute("UPDATE pbl.projects SET status = 'rejected' WHERE project_id = %s", (mess,))
+    row = db.execute("SELECT decided_at FROM pbl.projects WHERE project_id = %s", (mess,)).fetchone()
+    assert row["decided_at"] is not None                                    # set by the trigger
+
+
+def test_a_decided_project_has_a_decision_date(db):
+    err = error_of(db, "UPDATE pbl.projects SET decided_at = NULL WHERE title = 'College Library Management'")
+    assert err.diag.constraint_name == "decided_once_reviewed"
+
+
+def test_one_report_per_project_and_it_must_be_a_pdf(db):
+    lab = project_id(db, "ECE Lab Component Tracker")                     # has its sample report
+    insert = """INSERT INTO pbl.project_files (project_id, kind, file_name, storage_path, size_bytes, uploaded_by)
+                VALUES (%s, %s, %s, %s, 1000, %s)"""
+    om = user_id(db, OM)
+    assert error_of(db, insert, (lab, "report", "second.pdf", "test/second.pdf", om)).diag.constraint_name == "one_file_of_each_kind"
+    db.execute("DELETE FROM pbl.project_files WHERE project_id = %s AND kind = 'ppt'", (lab,))
+    db.execute(insert, (lab, "ppt", "slides.pptx", "test/slides.pptx", om))
+    err = error_of(db, "UPDATE pbl.project_files SET storage_path = 'test/report.docx' WHERE project_id = %s AND kind = 'report'", (lab,))
+    assert err.diag.constraint_name == "reports_are_pdf"
+
+
+def test_a_report_can_be_replaced_but_not_removed(db):
+    lab = project_id(db, "ECE Lab Component Tracker")
+    err = error_of(db, "DELETE FROM pbl.project_files WHERE project_id = %s AND kind = 'report'", (lab,))
+    assert err.diag.message_primary == "A project's report can be replaced but not removed"
+    db.execute("""UPDATE pbl.project_files SET file_name = 'Final report.pdf', storage_path = 'test/final.pdf'
+                  WHERE project_id = %s AND kind = 'report'""", (lab,))
 
 
 def test_near_duplicate_needs_a_review_note(db):
@@ -114,7 +153,7 @@ def test_near_duplicate_needs_a_review_note(db):
 
     err = error_of(db, "UPDATE pbl.projects SET status = 'approved' WHERE project_id = %s", (cctv,))
     assert err.diag.message_primary.startswith(
-        'This proposal is very close to "Smart Attendance Using Face Recognition"')
+        'This project is very close to "Smart Attendance Using Face Recognition"')
     assert "review note" in err.diag.message_hint
 
     db.execute("""UPDATE pbl.projects SET status = 'approved',
@@ -123,9 +162,9 @@ def test_near_duplicate_needs_a_review_note(db):
 
 
 def test_a_new_idea_is_approved_without_a_note(db):
-    proposal = project_id(db, "Predicting Students at Risk of Failing")
-    set_embedding(db, proposal, unit_vector(7))   # unlike anything else
-    db.execute("UPDATE pbl.projects SET status = 'approved' WHERE project_id = %s", (proposal,))
+    submitted = project_id(db, "Predicting Students at Risk of Failing")
+    set_embedding(db, submitted, unit_vector(7))   # unlike anything else
+    db.execute("UPDATE pbl.projects SET status = 'approved' WHERE project_id = %s", (submitted,))
 
 
 def test_editing_the_abstract_clears_the_stale_embedding(db):

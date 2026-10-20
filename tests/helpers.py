@@ -32,12 +32,13 @@ def set_embedding(conn: psycopg.Connection, project: int, vector: list[float]) -
     conn.execute("UPDATE pbl.projects SET embedding = %s WHERE project_id = %s", (vector, project))
 
 
-def new_project(conn: psycopg.Connection, title: str, subject: str, year: str, status: str = "proposed") -> int:
+def new_project(conn: psycopg.Connection, title: str, subject: str, year: str, status: str = "submitted") -> int:
     return conn.execute(
-        """INSERT INTO pbl.projects (title, abstract, subject_id, faculty_id, academic_year, project_type, status)
+        """INSERT INTO pbl.projects (title, abstract, subject_id, faculty_id, academic_year, project_type, status, decided_at)
            SELECT %s, 'A test project used only inside one test transaction.', subject_id,
-                  (SELECT user_id FROM pbl.users WHERE email = 'akulkarni@example.edu'), %s, 'software', %s
+                  (SELECT user_id FROM pbl.users WHERE email = 'akulkarni@mitwpu.edu.in'), %s, 'software', %s,
+                  CASE WHEN %s = 'submitted' THEN NULL ELSE now() END
            FROM pbl.subjects WHERE code = %s
            RETURNING project_id""",
-        (title, year, status, subject),
+        (title, year, status, status, subject),
     ).fetchone()["project_id"]

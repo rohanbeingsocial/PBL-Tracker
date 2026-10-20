@@ -5,8 +5,8 @@ import pytest
 from finder.config import require
 from tests.helpers import error_of, user_id
 
-STUDENT, STUDENT_EMAIL = "1032240101", "rohan.deogaonkar@example.edu"
-FACULTY, LEFT_COLLEGE, ADMIN = "akulkarni@example.edu", "kmenon@example.edu", "nshaikh@example.edu"
+STUDENT, STUDENT_EMAIL = "1032240101", "rohan.deogaonkar@mitwpu.edu.in"
+FACULTY, LEFT_COLLEGE, ADMIN = "akulkarni@mitwpu.edu.in", "kmenon@mitwpu.edu.in", "nshaikh@mitwpu.edu.in"
 
 
 @pytest.fixture(scope="module")
@@ -35,7 +35,7 @@ def test_students_sign_in_with_prn_or_email_and_faculty_with_email(app_db, passw
 
 def test_unknown_login_and_wrong_password_get_the_same_answer(app_db, password):
     wrong = sign_in(app_db, STUDENT, password + "x")
-    unknown = sign_in(app_db, "nobody@example.edu", password)
+    unknown = sign_in(app_db, "nobody@mitwpu.edu.in", password)
     assert wrong == unknown
     assert wrong["status"] == "wrong" and all(v is None for k, v in wrong.items() if k != "status")
 
@@ -69,16 +69,21 @@ def test_new_password_must_be_8_to_72_characters(app_db, password):
 
 def test_create_user_hands_out_a_temporary_password(app_db):
     temporary = app_db.execute(
-        "SELECT pbl.create_user('Tanvi Joshi', 'Tanvi.Joshi@example.edu', '1032249999', 'student', false) AS t"
+        "SELECT pbl.create_user('Tanvi Joshi', 'Tanvi.Joshi@mitwpu.edu.in', '1032249999', 'student', false) AS t"
     ).fetchone()["t"]
-    first = sign_in(app_db, "tanvi.joshi@example.edu", temporary)
+    first = sign_in(app_db, "tanvi.joshi@mitwpu.edu.in", temporary)
     assert first["status"] == "ok" and first["must_change_password"] is True
 
 
+def test_create_user_only_takes_college_emails(app_db):
+    err = error_of(app_db, "SELECT pbl.create_user('Outsider', 'someone@gmail.com', '', 'faculty', false)")
+    assert err.diag.constraint_name == "college_email"
+
+
 def test_create_user_checks_role_and_prn(app_db):
-    no_prn = error_of(app_db, "SELECT pbl.create_user('New Student', 'new.student@example.edu', '', 'student', false)")
+    no_prn = error_of(app_db, "SELECT pbl.create_user('New Student', 'new.student@mitwpu.edu.in', '', 'student', false)")
     assert no_prn.diag.constraint_name == "students_have_a_prn"
-    admin_student = error_of(app_db, "SELECT pbl.create_user('Odd', 'odd@example.edu', '1032249998', 'student', true)")
+    admin_student = error_of(app_db, "SELECT pbl.create_user('Odd', 'odd@mitwpu.edu.in', '1032249998', 'student', true)")
     assert admin_student.diag.constraint_name == "only_faculty_are_admins"
     taken = error_of(app_db, "SELECT pbl.create_user('Copy', %s, '', 'faculty', false)", (FACULTY,))
     assert taken.sqlstate == "23505"
