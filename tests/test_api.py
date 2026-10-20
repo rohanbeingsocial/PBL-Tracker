@@ -227,14 +227,14 @@ def test_a_failed_submission_leaves_no_files_behind(accounts, files_here):
 
 # Files and links --------------------------------------------------------------------
 
-def test_the_report_opens_inside_the_page(accounts):
+def test_the_report_can_be_read_in_the_browser(accounts):
     tank = water_tank(accounts["student"])
     report = next(f for f in tank["files"] if f["kind"] == "report")
     client = client_as(accounts["akash"])
     inline = client.get(f"/api/files/{report['file_id']}", params={"inline": "true"})
     assert inline.content.startswith(b"%PDF")
     assert inline.headers["content-disposition"].startswith("inline")
-    assert inline.headers["content-security-policy"] == "frame-ancestors 'self'"
+    assert inline.headers["content-security-policy"] == "frame-ancestors 'none'"
     download = client.get(f"/api/files/{report['file_id']}")
     assert download.headers["content-disposition"].startswith("attachment")
 
