@@ -12,7 +12,7 @@ import pytest
 testclient = pytest.importorskip("fastapi.testclient")
 from api import auth_routes, session  # noqa: E402  (needs fastapi)
 from api.app import app  # noqa: E402
-from finder import auth, db, storage  # noqa: E402  (storage needs httpx, which comes with the server)
+from finder import auth, db, storage  # noqa: E402
 from finder.config import require  # noqa: E402
 
 LOGINS = {"student": "1032240101", "faculty": "srao@example.edu", "iyer": "riyer@example.edu",
@@ -34,7 +34,7 @@ def accounts() -> dict[str, db.Account]:
 def files_here(tmp_path, monkeypatch):
     """Uploaded files go to a temporary folder instead of uploads/."""
     monkeypatch.setattr(storage, "LOCAL_DIR", tmp_path)
-    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("B2_BUCKET", raising=False)
     return tmp_path
 
 
