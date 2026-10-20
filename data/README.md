@@ -12,8 +12,10 @@ the demo student `1032240101` (Rohan Deogaonkar, a team member; PRN and email ar
 `projects.csv` is laid out the way faculty usually keep a sheet: `members`, `tags` and
 `links` hold several values separated by `;`. The first PRN in `members` is the team
 leader. Each link is written `label|url`, for example
-`GitHub|https://github.com/example/tank`. `type` is `software`, `hardware` or `both`, and
-`marks` is the project's total out of its subject's maximum (empty if not marked yet).
+`GitHub|https://github.com/example/tank`. `type` is `software`, `hardware` or `both`. `status` is `submitted`
+(waiting for the faculty member), `approved` or `rejected`, and `marks` is the project's
+total out of its subject's maximum (empty if not marked yet; only approved projects have
+marks).
 `scripts/load_data.py` splits these into the normalised tables; tags that don't exist
 yet are added.
 
@@ -21,7 +23,13 @@ The projects run from 2021-22 to 2026-27 across DBMS-PBL, ML-PBL and IOT-PBL. Th
 subjects themselves, and what each is marked out of, come from
 `sql/07_reference_data.sql`. The topics are ones that come up often in engineering PBLs,
 and a few are deliberately close to each other so the duplicate detection has something
-to find. Names, PRNs and emails are invented; emails use the reserved `example.edu` domain.
+to find. Names, PRNs and emails are invented. Emails end in `@mitwpu.edu.in`, because the
+database only accepts college emails, but none of them belong to a real person.
+
+There are no real reports in the repository. For every project, `scripts/load_data.py`
+makes a one-page PDF with the title, subject, faculty member, team and abstract
+(`scripts/sample_reports.py`) and stores it as the project's report, so each project page
+has something to show.
 
 `scripts/load_data.py` also gives every student and faculty member the password in
 `SEED_PASSWORD` from `.env`. Students sign in with their PRN, faculty with their email.

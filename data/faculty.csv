@@ -1,9 +1,9 @@
 name,email,is_active,is_admin
-Prof. A. Kulkarni,akulkarni@example.edu,true,false
-Prof. M. Deshpande,mdeshpande@example.edu,true,false
-Prof. S. Rao,srao@example.edu,true,false
-Dr. P. Joshi,pjoshi@example.edu,true,false
-Prof. R. Iyer,riyer@example.edu,true,false
-Dr. N. Shaikh,nshaikh@example.edu,true,true
-Prof. V. Patil,vpatil@example.edu,true,false
-Dr. K. Menon,kmenon@example.edu,false,false
+Prof. A. Kulkarni,akulkarni@mitwpu.edu.in,true,false
+Prof. M. Deshpande,mdeshpande@mitwpu.edu.in,true,false
+Prof. S. Rao,srao@mitwpu.edu.in,true,false
+Dr. P. Joshi,pjoshi@mitwpu.edu.in,true,false
+Prof. R. Iyer,riyer@mitwpu.edu.in,true,false
+Dr. N. Shaikh,nshaikh@mitwpu.edu.in,true,true
+Prof. V. Patil,vpatil@mitwpu.edu.in,true,false
+Dr. K. Menon,kmenon@mitwpu.edu.in,false,false

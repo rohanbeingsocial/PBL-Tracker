@@ -3,7 +3,8 @@
 projects.csv is laid out like the sheet a department keeps today: one row per
 project, with members, tags and links packed into single cells separated by ';'.
 This script splits those cells into project_members, project_tags and
-project_links, which is the 1NF step from docs/design.md done in code.
+project_links, which is the 1NF step from docs/design.md done in code. Each project
+also gets a one-page sample report (scripts/sample_reports.py) in the file storage.
 
 Every user gets the password in SEED_PASSWORD (sample data only, see data/README.md).
 
@@ -13,13 +14,16 @@ Running it twice is safe: rows that already exist are skipped.
     python -m scripts.load_data
 """
 import csv
+import re
 import sys
 from datetime import date
 from pathlib import Path
 
 import psycopg
 
+from finder import storage
 from finder.config import require
+from scripts.sample_reports import report
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
@@ -68,6 +72,7 @@ def load_projects(conn: psycopg.Connection) -> int:
     subjects = lookup(conn, "SELECT code, subject_id FROM pbl.subjects")
     faculty = lookup(conn, "SELECT email, user_id FROM pbl.users WHERE role = 'faculty'")
     students = lookup(conn, "SELECT prn, user_id FROM pbl.users WHERE role = 'student'")
+    names = lookup(conn, "SELECT user_id, name FROM pbl.users")
 
     unknown = {r["subject"] for r in rows} - subjects.keys()
     if unknown:
@@ -76,15 +81,18 @@ def load_projects(conn: psycopg.Connection) -> int:
     added = 0
     for row in rows:
         year = row["academic_year"]
+        start = int(year[:4])
+        guide = faculty[row["faculty_email"].lower()]
         new = conn.execute(
             """INSERT INTO pbl.projects (title, abstract, subject_id, faculty_id, academic_year,
-                                         project_type, status, review_note, marks, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                         project_type, status, review_note, marks, created_at, decided_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT (subject_id, academic_year, lower(title)) DO NOTHING
                RETURNING project_id""",
-            (row["title"], row["abstract"], subjects[row["subject"]], faculty[row["faculty_email"].lower()],
+            (row["title"], row["abstract"], subjects[row["subject"]], guide,
              year, row["type"], row["status"], row["review_note"] or None, row["marks"] or None,
-             date(int(year[:4]), 8, 1)),  # the sheet has no dates; use the start of term
+             # The sheet has no dates: submitted at the start of term, decided six weeks later.
+             date(start, 8, 1), None if row["status"] == "submitted" else date(start, 9, 15)),
         ).fetchone()
         if new is None:
             continue
@@ -109,6 +117,16 @@ def load_projects(conn: psycopg.Connection) -> int:
                 "INSERT INTO pbl.project_links (project_id, label, url) VALUES (%s, %s, %s)",
                 [(project_id, *link.split("|", 1)) for link in split(row["links"])],   # 'GitHub|https://...'
             )
+
+        team = [students[prn] for prn in split(row["members"])]
+        pdf = report(row["title"], year, row["subject"], names[guide], [names[u] for u in team], row["abstract"])
+        # The same path every time, so loading again overwrites the file instead of adding one.
+        path = "sample/" + re.sub(r"[^a-z0-9]+", "-", f"{year} {row['subject']} {row['title']}".lower()).strip("-") + ".pdf"
+        storage.save(path, pdf, "application/pdf")
+        conn.execute(
+            """INSERT INTO pbl.project_files (project_id, kind, file_name, storage_path, size_bytes, uploaded_by)
+               VALUES (%s, 'report', %s, %s, %s, %s)""",
+            (project_id, f"{row['title']}.pdf", path, len(pdf), team[0] if team else guide))
     return added
 
 
