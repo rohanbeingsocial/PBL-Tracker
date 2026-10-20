@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { Failed, Loading, PageHead } from "../components/ui";
-import { eyebrow, useApp } from "../context";
+import { useApp } from "../context";
 import { useLoad } from "../hooks";
 
 interface SubjectRow {
@@ -57,10 +57,10 @@ function SubjectForm({ start, onSaved, onCancel }: {
 }
 
 export default function Subjects() {
-  const { me, toast } = useApp();
+  const { toast } = useApp();
   const { data, error, loading, reload } = useLoad<{ subjects: SubjectRow[] }>("/subjects");
   const [editing, setEditing] = useState<number | null>(null);
-  const head = <PageHead eyebrow={eyebrow(me)} title="Subjects"
+  const head = <PageHead title="Subjects"
                          sub="Each subject marks its projects out of its own total, for example 33 for a lab or 5 for a theory subject." />;
   if (loading && !data) return <>{head}<Loading /></>;
   if (error || !data) return <>{head}<Failed message={error ?? ""} retry={reload} /></>;

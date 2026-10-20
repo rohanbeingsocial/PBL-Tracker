@@ -12,40 +12,46 @@ python -m scripts.embed_projects
 ```
 
 All sample accounts use the `SEED_PASSWORD` from `.env`. With `DEMO_SWITCHER=on`, use the
-sidebar's "Switch account" menu instead of signing out and in again. Keep a small PDF
-and a .pptx on the desktop for step 4.
+sidebar's "Switch account" menu instead of signing out and in again. Keep two small PDFs
+and a .pptx on the desktop for steps 3 and 4.
 
 1. **The problem (30 s).** Sign in as student `1032240102` (Akash Mane). Trends page:
    the most used tags per year, then "Ideas that keep coming back". Face recognition
-   attendance was done in 2022-23 and 2025-26, and a third team proposed it again this year.
+   attendance was done in 2022-23 and 2025-26, and a third team submitted it again this year.
 2. **Keywords vs. meaning (1 min).** Search page, type *predict heart attack risk from
    patient data*. Switch to **Keywords**: nothing. Switch to **Meaning**: Cardiac Risk
    Estimation and Heart Disease Prediction come first, although the cardiac project
    never says "heart". Then filter by subject IOT-PBL, type hardware, tag ESP32.
-3. **Check an idea and submit it (1 min).** Title *Attendance from classroom CCTV*,
+3. **Submit a project (1 min).** Submit page. Title *Attendance from classroom CCTV*,
    abstract *Recognise student faces from the CCTV camera in each classroom and mark
-   attendance automatically during the first ten minutes.* Red warning, near duplicate.
-   Submit it for ML-PBL with Prof. S. Rao, type software, teammates `1032240105` and
-   `1032240106`, tags Python and OpenCV, and a GitHub link. Home now shows the proposal
-   and its closest past project.
+   attendance automatically during the first ten minutes.* The side panel shows the
+   closest past projects, the top one marked as a near duplicate. Pick ML-PBL and
+   Prof. S. Rao, type software, teammates `1032240105` and `1032240106`, tags Python and
+   OpenCV, and a GitHub link. Press Submit without a report: it asks for the PDF. Attach
+   one of the PDFs and submit. The project page opens with the report on the left,
+   marked "Waiting for review".
 4. **Links and files (1 min).** Sign in as `1032240101` (Rohan). On the Smart Water Tank
-   project, add a demo video link, upload the PDF as the report and the .pptx as the
-   presentation. Open the report to show it downloads. Try uploading a .txt as a report:
-   refused.
-5. **Faculty (1.5 min).** Sign in as `srao@example.edu`. Home shows what is waiting.
-   Review proposals: press Approve with an empty note and the database refuses, naming
-   the closest project. Write a note, approve again: it goes through.
-6. **Marks (30 s).** Sign in as `riyer@example.edu`. Enter marks: the water tank project
-   is out of 33. Type 34: refused with the database's message. Type 27.5: saved. Rohan's
-   home now shows 27.5 / 33.
-7. **Admin (1 min).** Sign in as `nshaikh@example.edu`. Subjects: CN-TH is out of 5,
+   project, add a working demo link, replace the report with the other PDF and add the
+   .pptx as the presentation. Try a .txt as the report: refused. The report can only be
+   replaced, never removed.
+5. **Faculty (1.5 min).** Sign in as `srao@mitwpu.edu.in`. Home shows what is waiting.
+   Open *Automatic Classroom Attendance from CCTV Footage*: the report is on the left,
+   the decision on the right. Approve with an empty note and the database refuses, naming
+   the closest project. Write a note and approve again with 28 marks: it goes through,
+   and the approval date appears.
+6. **Marks (30 s).** Sign in as `riyer@mitwpu.edu.in`. Open the water tank project: it is
+   out of 33. Type 34: refused with the database's message. Type 27.5: saved. Switch to
+   Akash, who isn't in the team: the marks are hidden. Switch to Rohan, turn on "Show our
+   marks to everyone", and Akash now sees 27.5 / 33.
+7. **Admin (1 min).** Sign in as `nshaikh@mitwpu.edu.in`. Subjects: CN-TH is out of 5,
    and a new subject can be added with any maximum. People: add a student, which shows a
    temporary password once; that student has to choose a new one at their first sign-in.
+   Try a Gmail address: refused, only `@mitwpu.edu.in` accounts.
 8. **SQL (2 min).** `psql "<ADMIN_DATABASE_URL>" -f sql/demo.sql`. Walk through the errors
-   in steps 2-8, `pbl_app`'s privileges in 13, the joins in 14, and the index plans in 18.
+   in steps 2-10, `pbl_app`'s privileges in 15, the joins in 16, and the index plans in 20.
    It all rolls back at the end. Expected output: [demo-output.txt](demo-output.txt).
-9. **Cloud (30 s).** Supabase dashboard: Table Editor with the `pbl` schema, and the
-   `project-files` bucket with the files uploaded in step 4.
+9. **Cloud (30 s).** Supabase dashboard: Table Editor with the `pbl` schema. Backblaze
+   dashboard: the bucket's file browser with the files uploaded in step 4.
 
 ## Likely questions
 
@@ -85,7 +91,7 @@ different. We show similarity = 1 - distance because it's easier to read.
 **What is an HNSW index? Why doesn't EXPLAIN use it?**
 A graph of the vectors that lets Postgres jump to the nearest ones without comparing
 against every row. It's approximate: it can very rarely miss the true nearest neighbour.
-With 60 rows, reading the whole table is cheaper, so the planner skips the index; step 18
+With 60 rows, reading the whole table is cheaper, so the planner skips the index; step 20
 of the demo turns sequential scans off to show the plan that uses it.
 
 **Why does Python make the embeddings and not the database?**
@@ -94,9 +100,10 @@ float array; the database stores, indexes and searches them. The SQL functions c
 array to `vector(384)`, which also rejects an array of the wrong length.
 
 **Where are the reports and presentations stored?**
-In a private Supabase Storage bucket. The database has a `project_files` row for each:
-which project, report or ppt, the original name, the size, who uploaded it, and its path
-in the bucket. The path is random, so two files called `report.pdf` never clash and a
+In a private Backblaze B2 bucket (10 GB free). The database has a `project_files` row
+for each: which project, report or ppt, the original name, the size, who uploaded it, and
+its path in the bucket. `UNIQUE (project_id, kind)` allows one report and one
+presentation per project, and `reports_are_pdf` makes sure the report is a PDF. The path is random, so two files called `report.pdf` never clash and a
 file name can't be used to write somewhere else. Deleting a project deletes its file
 rows through `ON DELETE CASCADE`.
 
@@ -125,8 +132,8 @@ that describe the old text. `embed_projects.py` fills in every missing embedding
 
 **What can the app's database login do?**
 `pbl_app` can read what the pages show but not `password_hash`. It can update only a
-project's status, review note, marks and embedding; it can't delete projects or users,
-and it creates them only through `submit_project()` and `create_user()`. Step 13 of the
+project's status, review note, marks, `marks_public` and embedding; it can't delete projects or users,
+and it creates them only through `submit_project()` and `create_user()`. Step 15 of the
 demo shows each refusal.
 
 **What does `SECURITY DEFINER` mean, and why pin `search_path`?**
@@ -157,9 +164,31 @@ active and its password hasn't changed since this sign-in. If not, the server an
 401 and removes the cookie.
 
 **Where do you use transactions?**
-`submit_project()` inserts the project, members, tags and links as one unit: if the
+`submit_project()` inserts the project, members, tags, links and file rows as one unit: if the
 third PRN doesn't exist, the project row disappears too. `setup_db.py` builds the whole
 schema in one transaction. The SQL demo runs inside one and rolls back.
+
+**How do you know when a project was approved?**
+`decided_at`. The `check_project` trigger fills it in when the status changes from
+`submitted` to `approved` or `rejected`, and refuses any other change of status, so a
+decision is made once. The app can't write the column itself. The CHECK
+`decided_once_reviewed` says `decided_at` is empty exactly while the project is
+`submitted`, and `decided_after_submit` that it can't be before the project was created.
+
+**Why can't the report be deleted, and why does deleting a project still work?**
+A project without its report can't be reviewed or read. The `keep_report` trigger
+refuses to delete a report row while its project exists. When the whole project is
+deleted, the cascade removes the project first, the trigger finds no project, and lets
+the report row go too.
+
+**How do you keep people from outside MIT-WPU out?**
+The CHECK `college_email` on `users`: `email LIKE '%@mitwpu.edu.in'`. Every account
+needs it, whether it comes from `create_user()`, the People page or the sample data.
+
+**Who sees the marks?**
+The team, its faculty member and the coordinator. `marks_public` on the project lets the
+team show them to everyone; only team members can switch it. The column is in the
+database; who is shown what is decided by the server.
 
 **Why two CHECK constraints for the academic year?**
 `academic_year_format` checks the pattern; `academic_year_sequence` checks that 27 follows
@@ -182,7 +211,7 @@ The unique index on `(subject_id, academic_year, lower(title))` lets one commit 
 the other fail.
 
 **How is it deployed?**
-The database and the file bucket are on Supabase. The app connects through the Session
-pooler (works on IPv4) as `pbl_app.<project-ref>` with its own password; the scripts use
+The database is on Supabase and the files are in a Backblaze B2 bucket. The app connects
+through the Session pooler (works on IPv4) as `pbl_app.<project-ref>` with its own password; the scripts use
 the owner login. No credentials are in the repository. People sign in to the app with
 their own accounts, which live in the same database.

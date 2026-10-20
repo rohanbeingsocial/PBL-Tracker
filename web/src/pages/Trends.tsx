@@ -1,6 +1,5 @@
 import type { Band } from "../api";
-import { Failed, Loading, Meter, Metrics, PageHead } from "../components/ui";
-import { eyebrow, useApp } from "../context";
+import { Closeness, Failed, Loading, Metrics, PageHead } from "../components/ui";
 import { useLoad } from "../hooks";
 
 interface TrendsData {
@@ -26,8 +25,8 @@ function Heatmap({ rows, years }: { rows: TrendsData["tags"]; years: string[] })
     <div role="table" aria-label="Projects per stack tag per year">
       <div style={grid} role="row">
         <span />
-        {years.map((y) => <span key={y} className="mono muted" style={{ fontSize: 11, textAlign: "center", paddingBottom: 4 }}>{y}</span>)}
-        <span className="mono" style={{ fontSize: 11, color: "var(--faint)", textAlign: "right", paddingBottom: 4 }}>Σ</span>
+        {years.map((y) => <span key={y} className="muted" style={{ fontSize: 12, textAlign: "center", paddingBottom: 4 }}>{y}</span>)}
+        <span className="muted" style={{ fontSize: 12, textAlign: "right", paddingBottom: 4 }}>Total</span>
       </div>
       {tags.map((d) => (
         <div key={d} style={{ ...grid, marginTop: 3 }} role="row">
@@ -38,14 +37,14 @@ function Heatmap({ rows, years }: { rows: TrendsData["tags"]; years: string[] })
             return (
               <div key={y} title={`${d} · ${y} · ${n}`} role="cell"
                    style={{ height: 26, borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center",
-                            fontFamily: "var(--mono)", fontSize: 11, fontWeight: 600,
+                            fontSize: 12, fontWeight: 600,
                             background: n ? `color-mix(in oklab, var(--accent) ${Math.round(22 + 78 * share)}%, var(--surface-2))` : "var(--surface-2)",
                             color: share > 0.55 ? "var(--accent-fg)" : "var(--fg-soft)" }}>
                 {n || ""}
               </div>
             );
           })}
-          <span className="mono" style={{ fontSize: 12, textAlign: "right" }}>{total(d)}</span>
+          <span style={{ fontSize: 12.5, textAlign: "right" }}>{total(d)}</span>
         </div>
       ))}
     </div>
@@ -53,9 +52,8 @@ function Heatmap({ rows, years }: { rows: TrendsData["tags"]; years: string[] })
 }
 
 export default function Trends() {
-  const { me } = useApp();
   const { data, error, loading, reload } = useLoad<TrendsData>("/trends");
-  const head = <PageHead eyebrow={eyebrow(me)} title="Trends" sub="Which ideas and stacks come up again and again, and how many projects each faculty member has." />;
+  const head = <PageHead title="Trends" sub="Which ideas and stacks come up again and again, and how many projects each faculty member has." />;
   if (loading) return <>{head}<Loading /></>;
   if (error || !data) return <>{head}<Failed message={error ?? ""} retry={reload} /></>;
 
@@ -69,20 +67,20 @@ export default function Trends() {
     <>
       {head}
       <Metrics items={[
-        { label: "Projects on record", value: data.totals.projects, note: "rejected left out" },
+        { label: "Approved projects", value: data.totals.projects },
         { label: "Academic years", value: data.totals.years },
-        { label: "Near-duplicate pairs", value: data.pairs.filter((p) => p.band === "near duplicate").length, note: "similarity ≥ 0.70", tone: "down" },
-        { label: "Hardware projects", value: typeCount("hardware") + typeCount("both"), note: `${typeCount("both")} of them with an app too` },
+        { label: "Very close pairs", value: data.pairs.filter((p) => p.band === "near duplicate").length },
+        { label: "Hardware projects", value: typeCount("hardware") + typeCount("both") },
       ]} />
       <div className="stack" style={{ gap: 20 }}>
         <div className="card pad-lg">
           <div className="row" style={{ alignItems: "baseline", marginBottom: 16 }}>
             <div className="strong grow">Most used stacks per year</div>
-            <span className="mono muted" style={{ fontSize: 11 }}>fewer</span>
+            <span className="muted" style={{ fontSize: 12 }}>fewer</span>
             <div className="row" style={{ gap: 2 }}>
               {[20, 45, 70, 100].map((p) => <span key={p} style={{ width: 14, height: 10, borderRadius: 2, background: `color-mix(in oklab, var(--accent) ${p}%, var(--surface-2))` }} />)}
             </div>
-            <span className="mono muted" style={{ fontSize: 11 }}>more</span>
+            <span className="muted" style={{ fontSize: 12 }}>more</span>
           </div>
           {data.tags.length ? <Heatmap rows={data.tags} years={years} /> : <div className="small muted">No projects yet.</div>}
         </div>
@@ -92,13 +90,13 @@ export default function Trends() {
             <div className="small muted" style={{ marginTop: 2 }}>Pairs of projects whose titles and abstracts mean nearly the same thing.</div>
           </div>
           <table className="table">
-            <thead><tr><th>Project</th><th>Similar project</th><th style={{ width: 190 }}>Similarity</th></tr></thead>
+            <thead><tr><th>Project</th><th>Similar project</th><th style={{ width: 150 }}>How close</th></tr></thead>
             <tbody>
               {data.pairs.map((p) => (
                 <tr key={`${p.first_title}|${p.second_title}`}>
-                  <td>{p.first_title} <span className="mono" style={{ fontSize: 11.5, color: "var(--faint)" }}>{p.first_year}</span></td>
-                  <td>{p.second_title} <span className="mono" style={{ fontSize: 11.5, color: "var(--faint)" }}>{p.second_year}</span></td>
-                  <td><Meter score={p.similarity} /></td>
+                  <td>{p.first_title} <span className="muted">({p.first_year})</span></td>
+                  <td>{p.second_title} <span className="muted">({p.second_year})</span></td>
+                  <td><Closeness band={p.band} score={p.similarity} /></td>
                 </tr>
               ))}
               {data.pairs.length === 0 && <tr><td colSpan={3} className="muted">No similar pairs found.</td></tr>}
@@ -133,11 +131,11 @@ export default function Trends() {
             <div className="stack-sm" style={{ padding: "14px 20px", gap: 9 }}>
               {top.map(([name, count]) => (
                 <div key={name} style={{ display: "grid", gridTemplateColumns: "110px minmax(0, 1fr) 28px", gap: 12, alignItems: "center" }}>
-                  <span className="mono soft" style={{ fontSize: 12 }}>{name}</span>
+                  <span className="soft" style={{ fontSize: 13 }}>{name}</span>
                   <div style={{ height: 14, background: "var(--surface-2)", borderRadius: 2 }}>
                     <div style={{ height: "100%", width: `${(count / topCount) * 100}%`, background: "var(--accent)", borderRadius: 2 }} />
                   </div>
-                  <span className="mono" style={{ fontSize: 12, textAlign: "right" }}>{count}</span>
+                  <span style={{ fontSize: 13, textAlign: "right" }}>{count}</span>
                 </div>
               ))}
             </div>

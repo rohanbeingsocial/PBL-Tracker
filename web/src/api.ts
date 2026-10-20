@@ -2,7 +2,7 @@
 // so this code never sees it; the browser sends it along by itself.
 
 export type Role = "student" | "faculty";
-export type Status = "proposed" | "approved" | "rejected" | "completed";
+export type Status = "submitted" | "approved" | "rejected";
 export type Band = "near duplicate" | "similar" | "related" | "different";
 export type ProjectType = "software" | "hardware" | "both";
 
@@ -49,6 +49,8 @@ export interface Project {
   project_type: ProjectType;
   status: Status;
   review_note: string | null;
+  decided_at: string | null;
+  marks_public: boolean;
   members: string | null;
   member_ids: number[];
   tags: string[];
@@ -65,7 +67,17 @@ export interface Scored {
 export interface Closest extends Scored {
   closest_title: string | null;
   closest_year: string | null;
-  closest_abstract?: string | null;
+}
+
+// GET /projects/{id}: the card plus what this person may see and do.
+export interface ProjectDetail extends Project {
+  marks: number | null;
+  marks_hidden: boolean;
+  max_marks: number;
+  is_member: boolean;
+  is_faculty: boolean;
+  can_change: boolean;
+  closest: (Closest & { closest_id: number | null }) | null;
 }
 
 export interface Subject {
@@ -136,6 +148,11 @@ export function upload<T>(projectId: number, kind: ProjectFile["kind"], file: Fi
     headers: { "Content-Type": file.type || "application/octet-stream" },
     body: file,
   });
+}
+
+// The submit form goes as multipart form data, with the report and presentation in it.
+export function postForm<T>(path: string, form: FormData): Promise<T> {
+  return send<T>(path, { method: "POST", body: form });
 }
 
 export function query(params: Record<string, string | string[] | boolean | undefined>): string {

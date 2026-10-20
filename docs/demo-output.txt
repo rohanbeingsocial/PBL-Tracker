@@ -20,7 +20,7 @@ SELECT title, members FROM project_cards WHERE title = 'ECE Lab Component Tracke
 INSERT INTO project_members (project_id, user_id)
 SELECT p.project_id, u.user_id
 FROM projects p, users u
-WHERE p.title = 'ECE Lab Component Tracker' AND u.email = 'akulkarni@example.edu';
+WHERE p.title = 'ECE Lab Component Tracker' AND u.email = 'akulkarni@mitwpu.edu.in';
 ERROR:  Only students can be team members
 CONTEXT:  PL/pgSQL function trg_check_member() line 4 at RAISE
 
@@ -28,12 +28,12 @@ CONTEXT:  PL/pgSQL function trg_check_member() line 4 at RAISE
 UPDATE projects SET faculty_id = (SELECT user_id FROM users WHERE prn = '1032240101')
 WHERE title = 'ECE Lab Component Tracker';
 ERROR:  The assigned faculty member has to be a faculty user
-CONTEXT:  PL/pgSQL function trg_check_project() line 16 at RAISE
+CONTEXT:  PL/pgSQL function trg_check_project() line 17 at RAISE
 
 === 4. Marks: each subject sets its own maximum. DBMS-PBL is out of 33, CN-TH out of 5.
 UPDATE projects SET marks = 33.5 WHERE title = 'ECE Lab Component Tracker';
 ERROR:  Marks 33.5 are more than the maximum 33.0 for this subject
-CONTEXT:  PL/pgSQL function trg_check_project() line 29 at RAISE
+CONTEXT:  PL/pgSQL function trg_check_project() line 30 at RAISE
 UPDATE projects SET marks = 30 WHERE title = 'ECE Lab Component Tracker'
 RETURNING title, marks;
            title           | marks 
@@ -50,54 +50,83 @@ SELECT code, name, max_marks FROM subjects ORDER BY subject_id;
  CN-TH    | Computer Networks (theory) mini project |       5.0
 
 
-=== 5. Only approved or completed projects can be marked.
+=== 5. Only approved projects can be marked.
 UPDATE projects SET marks = 10 WHERE title = 'Mess Meal Pre-Booking and Feedback';
-ERROR:  Only approved or completed projects can be marked (this one is proposed)
-CONTEXT:  PL/pgSQL function trg_check_project() line 23 at RAISE
+ERROR:  Only approved projects can be marked (this one is submitted)
+CONTEXT:  PL/pgSQL function trg_check_project() line 24 at RAISE
 
-=== 6. CHECK constraints on the academic year: format first, then the two years must follow each other.
+=== 6. Only MIT-WPU accounts: every email has to end in @mitwpu.edu.in.
+INSERT INTO users (name, email, role, password_hash)
+VALUES ('Outsider', 'someone@gmail.com', 'faculty', '$2a$11$xxxxxxxxxxxxxxxxxxxxxx');
+ERROR:  new row for relation "users" violates check constraint "college_email"
+DETAIL:  Failing row contains (143, Outsider, someone@gmail.com, null, faculty, f, $2a$11$xxxxxxxxxxxxxxxxxxxxxx, t, 2026-10-20 08:41:11.432434+00, t, 2026-10-20 08:41:11.160571+00).
+
+=== 7. CHECK constraints on the academic year: format first, then the two years must follow each other.
 INSERT INTO projects (title, abstract, subject_id, faculty_id, academic_year, project_type)
 SELECT 'Year check', 'Only here to show the academic year constraints.', 1, user_id, '2026', 'software'
-FROM users WHERE email = 'akulkarni@example.edu';
+FROM users WHERE email = 'akulkarni@mitwpu.edu.in';
 ERROR:  new row for relation "projects" violates check constraint "academic_year_format"
-DETAIL:  Failing row contains (79, Year check, Only here to show the academic year constraints., 1, 1, 2026, software, proposed, null, null, 'academ':8B 'check':2A 'constraint':10B 'show':6B 'year':1A,9B, null, 2026-10-17 08:28:04.262763+00).
+DETAIL:  Failing row contains (74, Year check, Only here to show the academic year constraints., 1, 1, 2026, software, submitted, null, null, null, f, 'academ':8B 'check':2A 'constraint':10B 'show':6B 'year':1A,9B, null, 2026-10-20 08:41:11.160571+00).
 INSERT INTO projects (title, abstract, subject_id, faculty_id, academic_year, project_type)
 SELECT 'Year check', 'Only here to show the academic year constraints.', 1, user_id, '2026-28', 'software'
-FROM users WHERE email = 'akulkarni@example.edu';
+FROM users WHERE email = 'akulkarni@mitwpu.edu.in';
 ERROR:  new row for relation "projects" violates check constraint "academic_year_sequence"
-DETAIL:  Failing row contains (80, Year check, Only here to show the academic year constraints., 1, 1, 2026-28, software, proposed, null, null, 'academ':8B 'check':2A 'constraint':10B 'show':6B 'year':1A,9B, null, 2026-10-17 08:28:04.262763+00).
+DETAIL:  Failing row contains (75, Year check, Only here to show the academic year constraints., 1, 1, 2026-28, software, submitted, null, null, null, f, 'academ':8B 'check':2A 'constraint':10B 'show':6B 'year':1A,9B, null, 2026-10-20 08:41:11.160571+00).
 
-=== 7. Status only moves forward.
-UPDATE projects SET status = 'proposed' WHERE title = 'College Library Management';
-ERROR:  Status cannot change from completed to proposed
-CONTEXT:  PL/pgSQL function trg_check_project() line 9 at RAISE
+=== 8. A submitted project is approved or rejected once, and the trigger records when.
+UPDATE projects SET status = 'submitted' WHERE title = 'College Library Management';
+ERROR:  Status cannot change from approved to submitted
+CONTEXT:  PL/pgSQL function trg_check_project() line 8 at RAISE
+UPDATE projects SET status = 'rejected', review_note = 'Same scope as the 2025-26 mess project.'
+WHERE title = 'Mess Meal Pre-Booking and Feedback'
+RETURNING title, status, decided_at;
+               title                |  status  |          decided_at           
+------------------------------------+----------+-------------------------------
+ Mess Meal Pre-Booking and Feedback | rejected | 2026-10-20 08:41:11.160571+00
 
-=== 8. Links must be http or https, and the same link can only be added once.
+UPDATE 1
+
+=== 9. Reports: one per project, always a PDF. It can be replaced but not removed.
+INSERT INTO project_files (project_id, kind, file_name, storage_path, size_bytes, uploaded_by)
+SELECT project_id, 'report', 'second.pdf', 'demo/second.pdf', 1000, faculty_id
+FROM projects WHERE title = 'Smart Water Tank Level Controller';
+ERROR:  duplicate key value violates unique constraint "one_file_of_each_kind"
+DETAIL:  Key (project_id, kind)=(60, report) already exists.
+UPDATE project_files SET storage_path = 'demo/report.docx'
+WHERE kind = 'report' AND project_id = (SELECT project_id FROM projects WHERE title = 'Smart Water Tank Level Controller');
+ERROR:  new row for relation "project_files" violates check constraint "reports_are_pdf"
+DETAIL:  Failing row contains (60, 60, report, Smart Water Tank Level Controller.pdf, demo/report.docx, 1619, 115, 2026-10-20 08:39:16.36886+00).
+DELETE FROM project_files
+WHERE kind = 'report' AND project_id = (SELECT project_id FROM projects WHERE title = 'Smart Water Tank Level Controller');
+ERROR:  A project's report can be replaced but not removed
+CONTEXT:  PL/pgSQL function trg_keep_report() line 5 at RAISE
+
+=== 10. Links must be http or https, and the same link can only be added once.
 INSERT INTO project_links (project_id, label, url)
 SELECT project_id, 'GitHub', 'github.com/example/tank' FROM projects WHERE title = 'Smart Water Tank Level Controller';
 ERROR:  new row for relation "project_links" violates check constraint "project_links_url_check"
-DETAIL:  Failing row contains (13, 60, GitHub, github.com/example/tank).
+DETAIL:  Failing row contains (10, 60, GitHub, github.com/example/tank).
 INSERT INTO project_links (project_id, label, url)
 SELECT project_id, 'GitHub', 'https://github.com/example/tank' FROM projects WHERE title = 'Smart Water Tank Level Controller'
 RETURNING link_id, label, url;
  link_id | label  |               url               
 ---------+--------+---------------------------------
-      14 | GitHub | https://github.com/example/tank
+      11 | GitHub | https://github.com/example/tank
 
 INSERT 0 1
 
-=== 9. Keyword search (full-text search on a generated tsvector column, GIN index).
+=== 11. Keyword search (full-text search on a generated tsvector column, GIN index).
 SELECT title, rank, snippet FROM keyword_search('heart disease');
-              title              |   rank    |                                                       snippet                                                       
----------------------------------+-----------+---------------------------------------------------------------------------------------------------------------------
- Heart Disease Prediction System | 1.4714286 | that predicts «heart» «disease» from patient records using machine learning, with patient data stored in PostgreSQL
+              title              |  rank   |                                                       snippet                                                       
+---------------------------------+---------+---------------------------------------------------------------------------------------------------------------------
+ Heart Disease Prediction System | 1.47143 | that predicts «heart» «disease» from patient records using machine learning, with patient data stored in PostgreSQL
 
 SELECT title FROM keyword_search('heart attack risk');
  title 
 -------
 
 
-=== 10. Meaning search in SQL: each waiting proposal and its closest existing project (LATERAL + HNSW).
+=== 12. Meaning search in SQL: each waiting submission and its closest existing project (LATERAL + HNSW).
 SELECT title, closest_title, closest_year, round(similarity::numeric, 2) AS similarity, band
 FROM review_queue
 ORDER BY similarity DESC NULLS LAST;
@@ -105,11 +134,10 @@ ORDER BY similarity DESC NULLS LAST;
 --------------------------------------------------+-----------------------------------------+--------------+------------+----------------
  Automatic Classroom Attendance from CCTV Footage | Smart Attendance Using Face Recognition | 2025-26      |       0.76 | near duplicate
  Placement Drive Tracker                          | Campus Placement Portal                 | 2024-25      |       0.63 | similar
- Mess Meal Pre-Booking and Feedback               | Canteen Pre-Order System                | 2023-24      |       0.49 | related
  Predicting Students at Risk of Failing           | Smart Attendance Using Face Recognition | 2025-26      |       0.37 | related
 
 
-=== 11. Ideas that keep coming back (self-join on embeddings).
+=== 13. Ideas that keep coming back (self-join on embeddings).
 SELECT first_title, first_year, second_title, second_year, round(similarity::numeric, 2) AS similarity, band
 FROM repeated_ideas
 ORDER BY similarity DESC
@@ -126,10 +154,10 @@ LIMIT 8;
  Vehicle Accident Detection and Alert               | 2023-24    | Driver Fatigue Alert System                      | 2024-25     |       0.56 | similar
 
 
-=== 12. Approving a near duplicate needs a review note.
+=== 14. Approving a near duplicate needs a review note.
 UPDATE projects SET status = 'approved'
 WHERE title = 'Automatic Classroom Attendance from CCTV Footage';
-ERROR:  This proposal is very close to "Smart Attendance Using Face Recognition" (similarity 0.76)
+ERROR:  This project is very close to "Smart Attendance Using Face Recognition" (similarity 0.76)
 HINT:  Approve it with a review note that says how this project is different.
 CONTEXT:  PL/pgSQL function trg_check_near_duplicate() line 17 at RAISE
 UPDATE projects
@@ -143,11 +171,11 @@ RETURNING title, status;
 
 UPDATE 1
 
-=== 13. Privileges. The web app logs in as pbl_app: no password hashes, no deletes,
-        and only the review and marks columns of a project can change.
+=== 15. Privileges. The web app logs in as pbl_app: no password hashes, no deletes,
+        and only the review, marks and marks_public columns of a project can change.
 SET LOCAL ROLE pbl_app;
 SET
-SELECT name, role FROM users WHERE email = 'srao@example.edu';
+SELECT name, role FROM users WHERE email = 'srao@mitwpu.edu.in';
      name     |  role   
 --------------+---------
  Prof. S. Rao | faculty
@@ -169,7 +197,7 @@ UPDATE 1
 RESET ROLE;
 RESET
 
-=== 14. Joins through two link tables: hardware projects that used ESP32, with their team.
+=== 16. Joins through two link tables: hardware projects that used ESP32, with their team.
 SELECT p.title, p.academic_year, s.code AS subject, string_agg(u.name, ', ' ORDER BY u.name) AS team
 FROM projects p
 JOIN subjects s        ON s.subject_id = p.subject_id
@@ -191,7 +219,7 @@ ORDER BY p.academic_year, p.title;
  Smart Water Tank Level Controller              | 2026-27       | IOT-PBL | Rohan Deogaonkar, Samruddhi Khan, Siddhi Shetty
 
 
-=== 15. A student can be in several projects in one year (one per subject this semester).
+=== 17. A student can be in several projects in one year (one per subject this semester).
 SELECT u.name, p.academic_year, count(*) AS projects
 FROM project_members m
 JOIN users u    ON u.user_id = m.user_id
@@ -208,7 +236,7 @@ LIMIT 5;
  Kartik Menon   | 2023-24       |        3
 
 
-=== 16. Views and aggregates.
+=== 18. Views and aggregates.
 SELECT project_id, title, subject, faculty, project_type, members, tags
 FROM project_cards
 ORDER BY project_id
@@ -236,7 +264,6 @@ ORDER BY tag, academic_year;
  Flask | 2023-24       |             3
  Flask | 2024-25       |             3
  Flask | 2025-26       |             1
- Flask | 2026-27       |             1
 
 SELECT s.code, count(p.marks) AS marked, round(avg(p.marks), 1) AS average, s.max_marks AS out_of,
        round(100 * avg(p.marks / s.max_marks), 0) AS average_percent
@@ -251,26 +278,28 @@ ORDER BY s.code;
  ML-PBL   |     20 |    22.6 |   33.0 |              69
 
 
-=== 17. Deleting a project takes its members, tags, links and file records with it (ON DELETE CASCADE).
+=== 19. Deleting a project takes its members, tags, links and files with it (ON DELETE CASCADE).
 SELECT project_id AS tank FROM projects WHERE title = 'Smart Water Tank Level Controller' 
 SELECT (SELECT count(*) FROM project_members WHERE project_id = 60) AS members,
        (SELECT count(*) FROM project_tags    WHERE project_id = 60) AS tags,
-       (SELECT count(*) FROM project_links   WHERE project_id = 60) AS links;
- members | tags | links 
----------+------+-------
-       3 |    2 |     1
+       (SELECT count(*) FROM project_links   WHERE project_id = 60) AS links,
+       (SELECT count(*) FROM project_files   WHERE project_id = 60) AS files;
+ members | tags | links | files 
+---------+------+-------+-------
+       3 |    2 |     1 |     1
 
 DELETE FROM projects WHERE project_id = 60;
 DELETE 1
 SELECT (SELECT count(*) FROM project_members WHERE project_id = 60) AS members,
        (SELECT count(*) FROM project_tags    WHERE project_id = 60) AS tags,
-       (SELECT count(*) FROM project_links   WHERE project_id = 60) AS links;
- members | tags | links 
----------+------+-------
-       0 |    0 |     0
+       (SELECT count(*) FROM project_links   WHERE project_id = 60) AS links,
+       (SELECT count(*) FROM project_files   WHERE project_id = 60) AS files;
+ members | tags | links | files 
+---------+------+-------+-------
+       0 |    0 |     0 |     0
 
 
-=== 18. The indexes exist and get used. With only 60 rows a full scan is cheaper, so
+=== 20. The indexes exist and get used. With only 60 rows a full scan is cheaper, so
         sequential scans are switched off here just to show the plans.
 SET LOCAL enable_seqscan = off;
 SET

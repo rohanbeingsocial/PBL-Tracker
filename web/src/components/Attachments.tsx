@@ -1,17 +1,16 @@
 import { useRef, useState } from "react";
 import { api, upload, type Project, type ProjectFile } from "../api";
 import { useApp } from "../context";
-import { formatDay } from "../format";
 import { FILE_KIND } from "./ui";
 
-const ACCEPT = { report: ".pdf,.docx", ppt: ".pptx,.pdf" };
+const ACCEPT = { report: ".pdf", ppt: ".pptx,.pdf" };
 
 function size(bytes: number): string {
   return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-// Links and files of one project, for the team and its faculty member: add a link,
-// upload the report or presentation, remove either.
+// Links and files of one project, for the team and its faculty member: add or remove a
+// link, replace the report, upload, replace or remove the presentation.
 export function Attachments({ p, onChanged }: { p: Project; onChanged: () => void }) {
   const { toast } = useApp();
   const [label, setLabel] = useState("GitHub");
@@ -46,30 +45,29 @@ export function Attachments({ p, onChanged }: { p: Project; onChanged: () => voi
     run(() => upload(p.project_id, kind, file), `${FILE_KIND[kind]} uploaded.`);
   }
 
+  const has = (kind: ProjectFile["kind"]) => p.files.find((f) => f.kind === kind);
   return (
     <div className="stack" style={{ gap: 10 }}>
       <div className="divided">
         {p.links.map((l) => (
-          <div key={l.link_id} className="row" style={{ gap: 10, padding: "6px 0" }}>
-            <span className="label-sm" style={{ width: 90 }}>{l.label}</span>
-            <a className="link grow ellipsis small" href={l.url} target="_blank" rel="noopener noreferrer">{l.url}</a>
+          <div key={l.link_id} className="row small" style={{ gap: 10, padding: "6px 0" }}>
+            <span className="grow ellipsis">{l.label}: {l.url}</span>
             <button className="link small" disabled={busy} onClick={() => run(() => api(`/links/${l.link_id}`, { method: "DELETE" }), "Link removed.")}>Remove</button>
           </div>
         ))}
         {p.files.map((f) => (
-          <div key={f.file_id} className="row" style={{ gap: 10, padding: "6px 0" }}>
-            <span className="label-sm" style={{ width: 90 }}>{FILE_KIND[f.kind]}</span>
-            <a className="link grow ellipsis small" href={`/api/files/${f.file_id}`}>{f.file_name}</a>
-            <span className="mono muted" style={{ fontSize: 11 }}>{size(f.size_bytes)} · {formatDay(f.uploaded_at)}</span>
-            <button className="link small" disabled={busy} onClick={() => run(() => api(`/files/${f.file_id}`, { method: "DELETE" }), "File removed.")}>Remove</button>
+          <div key={f.file_id} className="row small" style={{ gap: 10, padding: "6px 0" }}>
+            <span className="grow ellipsis">{FILE_KIND[f.kind]}: {f.file_name} <span className="muted">({size(f.size_bytes)})</span></span>
+            {f.kind === "ppt" && (
+              <button className="link small" disabled={busy} onClick={() => run(() => api(`/files/${f.file_id}`, { method: "DELETE" }), "Presentation removed.")}>Remove</button>
+            )}
           </div>
         ))}
-        {!p.links.length && !p.files.length && <div className="small muted" style={{ padding: "6px 0" }}>No links or files yet.</div>}
       </div>
       <div className="row wrap" style={{ gap: 8 }}>
-        <input className="input" style={{ width: 120 }} value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} aria-label="Link label" />
-        <input className="input grow" style={{ minWidth: 200 }} value={url} maxLength={300} onChange={(e) => setUrl(e.target.value)}
-               placeholder="https://github.com/team/project" aria-label="Link URL" />
+        <input className="input" style={{ width: 110 }} value={label} maxLength={40} onChange={(e) => setLabel(e.target.value)} aria-label="Link label" />
+        <input className="input grow" style={{ minWidth: 160 }} value={url} maxLength={300} onChange={(e) => setUrl(e.target.value)}
+               placeholder="https://..." aria-label="Link URL" />
         <button className="btn" disabled={busy || !url.trim()} onClick={addLink}>Add link</button>
       </div>
       <div className="row wrap" style={{ gap: 8 }}>
@@ -78,7 +76,7 @@ export function Attachments({ p, onChanged }: { p: Project; onChanged: () => voi
             <input ref={pickers[kind]} type="file" accept={ACCEPT[kind]} hidden
                    onChange={(e) => { sendFile(kind, e.target.files?.[0]); e.target.value = ""; }} />
             <button className="btn" disabled={busy} onClick={() => pickers[kind].current?.click()}>
-              Upload {kind === "report" ? "report (PDF or Word)" : "presentation (PPTX or PDF)"}
+              {kind === "report" ? "Replace report (PDF)" : has("ppt") ? "Replace presentation" : "Upload presentation"}
             </button>
           </span>
         ))}

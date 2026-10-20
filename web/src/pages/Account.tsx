@@ -1,8 +1,7 @@
 import { useContext, useState, type FormEvent } from "react";
 import { api, type Account } from "../api";
-import { Logo } from "../components/Shell";
 import { PageHead } from "../components/ui";
-import { AppContext, eyebrow } from "../context";
+import { AppContext } from "../context";
 
 function PasswordForm({ forced, onChanged }: { forced: boolean; onChanged: (a: Account) => void }) {
   const [current, setCurrent] = useState("");
@@ -60,7 +59,7 @@ export default function AccountPage(props: { forced?: boolean; me?: Account; onC
     return (
       <div className="signin">
         <div className="signin-box" style={{ maxWidth: 520 }}>
-          <div className="row" style={{ gap: 10 }}><Logo /><div className="wordmark">pbl<span>/</span>tracker</div></div>
+          <div className="row" style={{ gap: 10 }}><div className="wordmark">PBL Tracker</div><span className="muted small">MIT-WPU</span></div>
           <div>
             <h1>Choose a new password</h1>
             <p className="muted" style={{ margin: "6px 0 0" }}>You signed in as {props.me.name} with a temporary password. Choose your own to continue.</p>
@@ -74,10 +73,10 @@ export default function AccountPage(props: { forced?: boolean; me?: Account; onC
   const me = app!.me;
   return (
     <>
-      <PageHead eyebrow={eyebrow(me)} title="Your account" />
+      <PageHead title="Your account" />
       <div className="card pad stack-sm" style={{ maxWidth: 520, marginBottom: 24 }}>
         <div className="strong">{me.name}</div>
-        <div className="meta">{me.role}{me.is_admin ? ", admin" : ""} · {me.login}</div>
+        <div className="meta">{me.role === "student" ? "Student" : me.is_admin ? "Faculty, PBL coordinator" : "Faculty"} · {me.login}</div>
       </div>
       <div className="label" style={{ marginBottom: 12 }}>Change password</div>
       <PasswordForm forced={false} onChanged={() => {}} />

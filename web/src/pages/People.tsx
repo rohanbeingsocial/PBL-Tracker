@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, type Role } from "../api";
 import { Failed, Loading, Metrics, Notice, PageHead, Segmented } from "../components/ui";
-import { eyebrow, useApp } from "../context";
+import { useApp } from "../context";
 import { useLoad } from "../hooks";
 
 interface Person {
@@ -56,7 +56,7 @@ function AddPerson({ onAdded }: { onAdded: (who: string, password: string) => vo
       <div className="strong">Add a person</div>
       <Segmented options={["student", "faculty"] as const} value={role} onChange={setRole} label="Role" />
       <input className="input" value={name} maxLength={100} onChange={(e) => setName(e.target.value)} placeholder="Full name" aria-label="Name" />
-      <input className="input" value={email} maxLength={120} onChange={(e) => setEmail(e.target.value)} placeholder="College email" aria-label="Email" />
+      <input className="input" value={email} maxLength={120} onChange={(e) => setEmail(e.target.value)} placeholder="name@mitwpu.edu.in" aria-label="College email" />
       {role === "student"
         ? <input className="input mono" value={prn} maxLength={10} onChange={(e) => setPrn(e.target.value)} placeholder="PRN" aria-label="PRN" />
         : <label className="row small" style={{ gap: 8 }}><input type="checkbox" checked={admin} onChange={(e) => setAdmin(e.target.checked)} />PBL coordinator (admin)</label>}
@@ -67,7 +67,7 @@ function AddPerson({ onAdded }: { onAdded: (who: string, password: string) => vo
 }
 
 export default function People() {
-  const { me, toast } = useApp();
+  const { toast } = useApp();
   const { data, error, loading, reload } = useLoad<{ people: Person[]; me: number }>("/people");
   const [find, setFind] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
@@ -75,7 +75,7 @@ export default function People() {
   const [temporary, setTemporary] = useState<{ who: string; password: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const head = <PageHead eyebrow={eyebrow(me)} title="People"
+  const head = <PageHead title="People"
                          sub="Everyone who can sign in. Passwords are never shown or stored in readable form; to help someone who forgot theirs, give them a temporary one." />;
   if (loading && !data) return <>{head}<Loading /></>;
   if (error || !data) return <>{head}<Failed message={error ?? ""} retry={reload} /></>;

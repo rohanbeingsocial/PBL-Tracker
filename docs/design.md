@@ -5,7 +5,9 @@
 - Keep every PBL project: title, abstract, subject, faculty member, year, software or hardware, status, team, tags, links, report, presentation and marks.
 - Find past projects by keyword and by meaning, and warn when a new idea is close to an old one.
 - Enforce the rules that actually hold in our college, and nothing more: teams of any size, students in several projects at once, and marks out of whatever each subject is marked out of.
-- Let faculty approve or reject proposals and enter marks for their own projects.
+- Let a team submit its finished project with the report to a faculty member, who approves or rejects it and gives the marks.
+- Keep marks private to the team and its faculty member unless the team chooses to show them.
+- Only MIT-WPU students and faculty can use it.
 - Show trends: which stacks come up each year, repeated ideas, faculty load.
 
 Sizes we designed for: a student does around 5 PBLs a semester, so a department of a few
@@ -15,25 +17,25 @@ thousands of projects.
 
 ## Entities and relationships
 
-- A **user** is a student or a faculty member (`role`). Students have a PRN; faculty don't. A faculty member can also be an admin (the PBL coordinator).
+- A **user** is a student or a faculty member (`role`), always with an `@mitwpu.edu.in` email. Students have a PRN; faculty don't. A faculty member can also be an admin (the PBL coordinator).
 - A **subject** (DBMS-PBL, ML-PBL, CN-TH, ...) has many projects and its own `max_marks`.
-- A **project** belongs to one subject and has one faculty member (`faculty_id`, a user with the faculty role).
+- A **project** belongs to one subject and is submitted to one faculty member (`faculty_id`, a user with the faculty role), who approves or rejects it (`decided_at` records when) and gives the marks.
 - Projects and students are many-to-many through **project_members**, which also stores who leads the team. A team has no fixed size, and a student can be in any number of projects.
 - Projects and **tags** are many-to-many through **project_tags**.
-- A project has any number of **links** (GitHub, demo video, hosted site) and **files** (report, presentation). Each file row records who uploaded it.
+- A project has any number of **links** (GitHub, working demo, video) and up to two **files**: exactly one report (a PDF) and at most one presentation. Each file row records who uploaded it.
 
 The ER diagram is in the README (GitHub draws it from the Mermaid source).
 
 | Table | Primary key | Notable rules |
 |---|---|---|
-| users | user_id | email unique and lowercase; PRN 10 digits, only for students; only faculty can be admins; bcrypt hash only |
+| users | user_id | email unique, lowercase and `@mitwpu.edu.in`; PRN 10 digits, only for students; only faculty can be admins; bcrypt hash only |
 | subjects | subject_id | code unique; max_marks > 0 |
-| projects | project_id | year format and sequence checks; status list; type list; marks 0 to the subject's max; title once per subject and year; generated search_text |
+| projects | project_id | year format and sequence checks; status list; `decided_at` set exactly when decided; type list; marks 0 to the subject's max, only once approved; title once per subject and year; generated search_text |
 | project_members | (project_id, user_id) | students only; one leader per team |
 | tags | tag_id | name unique ignoring case |
 | project_tags | (project_id, tag_id) | link table |
 | project_links | link_id | http or https only; the same URL once per project |
-| project_files | file_id | report or ppt; 1 byte to 20 MB; storage_path unique |
+| project_files | file_id | one report and at most one ppt per project; reports are PDFs; the report can't be removed; 1 byte to 20 MB; storage_path unique |
 
 ## Normalisation
 
@@ -85,6 +87,10 @@ Two columns look like they break this, and both are on purpose:
 | `max_marks` on the subject, and one `marks` column on the project | Labs are marked out of 33 and a theory mini project out of 5, but the admin can set anything. Each project gets one total, entered by its faculty member; the trigger checks it against its own subject. |
 | Software / hardware / both as a column, the stack as tags | Every project is exactly one of the three, so it is a column with a CHECK. The stack is a list of any length, so it goes in `tags`. |
 | Files in a storage bucket, details in `project_files` | A 15 MB report doesn't belong in a table row. The bucket holds the bytes; the table holds the name, size, kind, project and uploader, with foreign keys, so the database still knows what belongs to what. |
+| The report is required and must be a PDF | It is the project; a submission without it can't be reviewed. A PDF opens in any browser, so the project page can show it straight away. `submit_project()` takes the report, `reports_are_pdf` checks the type, and the `keep_report` trigger stops it being deleted while the project exists. A new report replaces the old row in place. |
+| One step from submission to marks | Teams submit finished work, so there is no separate idea stage: `submitted`, then `approved` or `rejected` once. Marks are only allowed on approved projects. |
+| `marks_public` on the project | Marks belong to the team. The app shows them to the team, its faculty member and the coordinator, and to everyone else only when the team turns this on. |
+| College emails only | A CHECK (`college_email`) on `users`, so no other address can get in, whichever way a user is added. |
 | Own schema `pbl` | Supabase exposes `public` through an automatic REST API. Tables in `pbl` are not reachable that way. |
 | `GENERATED ALWAYS AS IDENTITY` keys | SQL-standard; the database always picks the id, so ids can't be forced or collide. |
 | Status as a CHECK list, not an ENUM | Same safety, and a CHECK is easier to change later. |
@@ -93,7 +99,7 @@ Two columns look like they break this, and both are on purpose:
 | Embedding as a column on `projects` | One embedding per project, made from that project's own title and abstract. Ordinary queries list their columns, so the 1.5 KB of numbers is only read by the searches that need it. |
 | Python sends embeddings as a plain float array | The SQL functions cast it to `vector(384)`. The app needs no pgvector client library, and an array of the wrong length is rejected by the cast. |
 | `similarity_band()` function | The 0.70 / 0.50 / 0.35 cut-offs live in one place. The app, the views and the approval trigger all use it. |
-| Projects are created only through `submit_project()` | One call, one transaction: if any PRN is wrong, nothing is saved. Status is forced to `proposed` and the year to the current one. Tags that don't exist yet are added. |
+| Projects are created only through `submit_project()` | One call, one transaction: the project, team, tags, links, report and presentation are saved together, and if any PRN is wrong nothing is saved. Status is forced to `submitted` and the year to the current one. Tags that don't exist yet are added. |
 | Hybrid search with Reciprocal Rank Fusion | Keyword ranks and similarity scores aren't on the same scale, so they can't be added. RRF only uses each project's position in each list: `1/(60 + rank)`. |
 | Passwords hashed and checked inside the database (pgcrypto bcrypt, cost 11) | The hash never leaves the database and the app's login can't read it. One check takes about 80 ms, which a person doesn't notice and a guesser does. |
 
@@ -105,13 +111,14 @@ Two columns look like they break this, and both are on purpose:
 | HNSW on `projects.embedding` (cosine) | nearest-neighbour search (`ORDER BY embedding <=> query LIMIT n`) |
 | `projects(faculty_id)`, `projects(subject_id, academic_year)` | faculty pages, filters by subject and year |
 | `project_members(user_id)` | a student's own projects on their home page |
-| `project_tags(tag_id)`, `project_files(project_id)` | joins from the other side; Postgres doesn't index foreign keys by itself |
+| `project_tags(tag_id)` | joins from the other side; Postgres doesn't index foreign keys by itself |
+| unique `project_files(project_id, kind)` | one report and one presentation per project; also serves lookups by project |
 | unique `projects(subject_id, academic_year, lower(title))` | stops double submits |
 | unique `lower(name)` on tags | stops 'PostgreSQL' and 'postgresql' existing together |
 | partial unique `project_members(project_id) WHERE is_leader` | one leader per team |
 
 With 60 rows Postgres reads whole tables instead of using these indexes, because that is
-cheaper. Step 18 of `sql/demo.sql` turns sequential scans off to show the plans that use
+cheaper. Step 20 of `sql/demo.sql` turns sequential scans off to show the plans that use
 the GIN and HNSW indexes.
 
 HNSW is approximate: it can occasionally miss the true nearest neighbour in exchange for

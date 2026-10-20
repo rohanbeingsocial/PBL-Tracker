@@ -1,24 +1,3 @@
-import type { Band } from "./api";
-
-// Same cut-offs as similarity_band() in sql/03_functions.sql.
-export function bandOf(score: number): Band {
-  return score >= 0.7 ? "near duplicate" : score >= 0.5 ? "similar" : score >= 0.35 ? "related" : "different";
-}
-
-export const BAND_CLASS: Record<Band, string> = {
-  "near duplicate": "band-near",
-  similar: "band-similar",
-  related: "band-related",
-  different: "band-different",
-};
-
-export const BAND_COLOR: Record<Band, string> = {
-  "near duplicate": "var(--down)",
-  similar: "var(--warn)",
-  related: "var(--accent)",
-  different: "var(--faint)",
-};
-
 const day = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 const dayTime = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" });

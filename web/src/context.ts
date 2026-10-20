@@ -18,8 +18,3 @@ export function useApp(): AppState {
   if (!state) throw new Error("useApp outside the signed-in app");
   return state;
 }
-
-// The small label above each page title.
-export function eyebrow(me: Account): string {
-  return me.is_admin ? "PBL coordinator" : me.role === "student" ? "Student" : "Faculty";
-}

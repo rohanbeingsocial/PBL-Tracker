@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 
-export type Path = "/" | "/search" | "/check" | "/trends" | "/review" | "/marks" | "/people" | "/subjects" | "/account";
+export type Page = "/" | "/search" | "/submit" | "/trends" | "/review" | "/people" | "/subjects" | "/account";
+export type Path = Page | `/projects/${number}`;
 
 // The current page lives in the URL, so back/forward and reload work.
 export function usePath(): [string, (to: Path) => void] {

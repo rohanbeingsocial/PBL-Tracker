@@ -1,13 +1,14 @@
 # PBL Tracker
 
-One place for every PBL project a department runs: who is in the team, which faculty
-member guides it, which subject it is for, what it is built with, its links, its report
-and presentation, and the marks it got. Before a team submits a topic, it also shows the
-closest past projects **by meaning**, not just by matching words, so repeated ideas get
-noticed early.
+One place for every PBL project at MIT-WPU: who was in the team, which subject it was
+for, which faculty member approved it, what it was built with, its report, presentation
+and links, and the marks it got. A team submits its finished project with the report to
+the faculty member of its choice, who reviews it and gives the marks. While a team fills
+in the form, the closest past projects are shown **by meaning**, not just by matching
+words, so repeated ideas get noticed.
 
-DBMS PBL, 2026-27. PostgreSQL 17 with pgvector (hosted on Supabase, with Supabase
-Storage for files), a FastAPI server with a React front end, psycopg 3, and the
+DBMS PBL, 2026-27. PostgreSQL 17 with pgvector (hosted on Supabase), files in a
+Backblaze B2 bucket, a FastAPI server with a React front end, psycopg 3, and the
 all-MiniLM-L6-v2 sentence embedding model.
 
 ## The problem
@@ -40,22 +41,27 @@ across different years.
 
 | Page | Who | What |
 |---|---|---|
-| Home | everyone | Students: their projects with marks, links and files, and the closest past project to each proposal. Faculty: proposals waiting and projects left to mark. Admin: totals, projects per year, latest submissions |
-| Search projects | everyone | Keyword, meaning or both (merged with Reciprocal Rank Fusion), with subject, tag, type and year filters |
-| Check an idea | everyone | Top 5 closest past projects with a similarity score; students can then submit the idea with their team, faculty, subject, tags and links |
-| Trends | everyone | Most used tags per year, software vs. hardware, ideas that keep coming back, faculty load |
-| Review proposals | faculty | Each proposal next to its closest existing project; approve or reject |
-| Enter marks | faculty | One mark per project, out of that subject's maximum |
+| Home | everyone | Students: their projects and marks. Faculty: submissions waiting for review and approved projects not graded yet. Admin: totals, projects per year, latest submissions |
+| Search projects | everyone | Every approved project from every year, by name or by idea (keyword, meaning, or both merged with Reciprocal Rank Fusion), with subject, technology, type and year filters |
+| Project | everyone | The report opens on the left; on the right the team, subject, year, the faculty member who approved it, the dates, technologies, links, presentation and abstract |
+| Submit a project | students | Title, abstract, subject, the faculty member it goes to, teammates, technologies, the report (PDF, required), and optionally the presentation, a GitHub link and a working demo link. The closest past projects show up next to the form |
+| Trends | everyone | Most used technologies per year, software vs. hardware, ideas that keep coming back, faculty load |
+| Review and marks | faculty | Submissions waiting for review; on the project page, approve or reject and give marks |
 | People | admin | Add students and faculty, give someone a temporary password, switch an account off, make a faculty member an admin |
 | Subjects | admin | Add subjects and set what each one is marked out of |
 | Your account | everyone | Change your password |
 
-On any project they are part of, the team and its faculty member can add or remove
-links (GitHub, demo video, hosted site) and upload the report (PDF or Word) and the
-presentation (PowerPoint or PDF), up to 20 MB each. Everyone signed in can open them.
+Only MIT-WPU people can use it: every account has an `@mitwpu.edu.in` email, and
+nothing opens without signing in. Students sign in with their PRN or college email,
+faculty with their email. Passwords are checked inside PostgreSQL (bcrypt through
+pgcrypto). Light and dark themes are in the sidebar.
 
-Everyone signs in: students with their PRN or college email, faculty with their email.
-Passwords are checked inside PostgreSQL (bcrypt through pgcrypto).
+Marks are seen by the team, its faculty member and the PBL coordinator. The team can
+switch on "Show our marks to everyone" on its project page. A project still waiting for
+review, or rejected, is seen only by its team, its faculty member and the coordinator.
+
+The team and its faculty member can replace the report, add, replace or remove the
+presentation (PowerPoint or PDF), and add or remove links, up to 20 MB per file.
 
 The app has two halves. `api/` is a small FastAPI server: every endpoint opens one
 transaction and runs the SQL. `web/` is the React front end (Vite, TypeScript) that
@@ -63,7 +69,7 @@ calls it; `python -m api` serves both from one address once the front end is bui
 
 ## Database design
 
-8 tables in 3NF, 4 views, 4 triggers, 16 functions (4 of them trigger functions).
+8 tables in 3NF, 4 views, 5 triggers, 17 functions (5 of them trigger functions).
 Design notes, the normalisation walk-through and index choices are in
 [docs/design.md](docs/design.md).
 
@@ -103,8 +109,10 @@ erDiagram
         int faculty_id FK
         varchar academic_year
         varchar project_type "software, hardware, both"
-        varchar status
+        varchar status "submitted, approved, rejected"
+        timestamptz decided_at
         numeric marks
+        boolean marks_public
         tsvector search_text "generated"
         vector embedding "384 numbers"
     }
@@ -130,7 +138,7 @@ erDiagram
     PROJECT_FILES {
         int file_id PK
         int project_id FK
-        varchar kind "report or ppt"
+        varchar kind "report or ppt, one of each"
         varchar file_name
         varchar storage_path UK
         int size_bytes
@@ -142,7 +150,7 @@ Students and faculty share one `users` table with a `role` column, so a project'
 (`project_members.user_id`) and its faculty member (`projects.faculty_id`) both point at
 `users`. Tags cover the stack and anything else worth filtering on (ESP32, Flask,
 OpenCV); whether a project is software, hardware or both is its own column, and the year
-is `academic_year`. The files themselves live in a Supabase Storage bucket;
+is `academic_year`. The files themselves live in a Backblaze B2 bucket;
 `project_files` keeps the name, size, who uploaded it and where it is stored.
 
 ### Rules the database enforces
@@ -154,13 +162,15 @@ is `academic_year`. The files themselves live in a Supabase Storage bucket;
 | One leader per team | Partial unique index |
 | The assigned faculty member has to be a faculty user | `check_project` trigger |
 | Marks can't be negative or more than the subject's maximum (33 for a lab, 5 for a theory mini project, whatever the admin sets) | CHECK + `check_project` trigger |
-| Only approved or completed projects can be marked | `check_project` trigger |
-| Status is one of proposed / approved / rejected / completed, and only moves forward | CHECK + `check_project` trigger |
+| Only approved projects can be marked | `check_project` trigger |
+| Status is submitted, then approved or rejected once; the trigger records the date | CHECK + `check_project` trigger, and a CHECK that `decided_at` is set exactly when it was decided |
+| Every account has an `@mitwpu.edu.in` email | `college_email` CHECK |
+| A project is submitted with its report; one report (a PDF) and at most one presentation per project; the report can be replaced but not removed | `submit_project()`, unique `(project_id, kind)`, `reports_are_pdf` CHECK, `keep_report` trigger |
 | Approving a near duplicate (similarity 0.70 or more) needs a review note | `check_near_duplicate` trigger, using pgvector |
 | Academic year looks like `2026-27`, and 27 follows 26 | Two named CHECK constraints (regex, then arithmetic) |
 | The same title can't be submitted twice for one subject and year | Unique index on `lower(title)` |
 | Links start with http:// or https://, once per project | CHECK + unique constraint |
-| Only reports and presentations, up to 20 MB | CHECKs on `kind` and `size_bytes` |
+| Files are up to 20 MB | CHECK on `size_bytes` |
 | Tag names are unique ignoring case | Unique index on `lower(name)` |
 | Students have a 10-digit PRN, faculty don't; only faculty can be admins | Two CHECK constraints on `users` |
 | Deleting a project removes its members, tags, links and file records; a user still in a team can't be deleted | `ON DELETE CASCADE` from projects only |
@@ -179,8 +189,8 @@ arrays in the `project_cards` view; partial and expression indexes; `LATERAL` jo
 ## Security
 
 The app connects as `pbl_app`, a login that can read what the pages show and change
-only what the app needs: a project's status, review note and marks, its links and files,
-subjects, and whether a user is switched on or an admin. It can't read password hashes,
+only what the app needs: a project's status, review note, marks and whether its marks
+are public, its links and files, subjects, and whether a user is switched on or an admin. It can't read password hashes,
 can't delete projects or users, and creates projects and users only through
 `submit_project()` and `create_user()`, which check everything first. Which signed-in
 person may do what (a student, the project's faculty member, an admin) is checked by the
@@ -222,16 +232,19 @@ built), creates the `pbl_app` login, and sets its password from a hash made on y
 machine. `--reset` rebuilds from scratch. `load_data` hashes a password for each sample
 user, which takes about 10 seconds.
 
-### Reports and presentations (Supabase Storage)
+### Reports and presentations (Backblaze B2)
 
-1. In the Supabase dashboard open **Storage**, click **New bucket**, name it
-   `project-files` and leave **Public** off.
-2. Under **Project Settings > API Keys**, copy the secret key.
-3. In `.env`, set `SUPABASE_URL` (`https://<project-ref>.supabase.co`) and
-   `SUPABASE_SECRET_KEY`.
+The free plan has 10 GB, much more than Supabase Storage's 1 GB.
 
-The browser never talks to Supabase: files go through the server, which checks who is
-uploading and what kind of file it is. With these two settings empty, files are kept in
+1. Create a free account at [backblaze.com](https://www.backblaze.com/cloud-storage).
+2. **Buckets > Create a Bucket**: any name that isn't taken (bucket names are shared
+   across all of B2), files **Private**. Note the **Endpoint** shown on the bucket.
+3. **Application Keys > Add a New Application Key**: allow access to this bucket only,
+   Read and Write. The application key is shown once.
+4. In `.env`, set `B2_ENDPOINT`, `B2_BUCKET`, `B2_KEY_ID` and `B2_APPLICATION_KEY`.
+
+The browser never talks to B2: files go through the server, which checks who is
+uploading and what kind of file it is. With these settings empty, files are kept in
 the `uploads/` folder instead, which is fine for working on a laptop.
 
 ### Database on your laptop (Docker)
@@ -257,11 +270,11 @@ Sign in with one of the sample users and the `SEED_PASSWORD` from your `.env`:
 
 | Role | Sign in as | Shows |
 |---|---|---|
-| Student | `1032240101` (Rohan Deogaonkar) | A proposal flagged as a near duplicate, and an approved project with links |
-| Student | `1032240102` (Akash Mane) | No project this year, so the check-and-submit flow |
-| Faculty | `srao@example.edu` (Prof. S. Rao) | Rohan's proposal, waiting for a decision |
-| Faculty | `riyer@example.edu` (Prof. R. Iyer) | Rohan's running project, with no marks yet |
-| Admin | `nshaikh@example.edu` (Dr. N. Shaikh, PBL coordinator) | Everything, plus People and Subjects |
+| Student | `1032240101` (Rohan Deogaonkar) | A submission very close to an earlier project, waiting for review, and an approved project |
+| Student | `1032240102` (Akash Mane) | No project this year, so the submit flow |
+| Faculty | `srao@mitwpu.edu.in` (Prof. S. Rao) | Rohan's submission, waiting for review |
+| Faculty | `riyer@mitwpu.edu.in` (Prof. R. Iyer) | Rohan's approved project, not graded yet |
+| Admin | `nshaikh@mitwpu.edu.in` (Dr. N. Shaikh, PBL coordinator) | Everything, plus People and Subjects |
 
 **Demo account switcher.** With `DEMO_SWITCHER=on` in `.env`, the sign-in page lists
 these five users and the sidebar gets a "Switch account" menu. It signs in through the
@@ -280,11 +293,11 @@ takes milliseconds.
 pytest
 ```
 
-65 tests: the rules, what `pbl_app` may and may not do, sign-in and passwords (40
-database tests), and the web server's sessions, every page for every role, links, file
-uploads and marks (25 API tests). The database tests run inside a transaction that is
-rolled back, so the data is untouched; the API tests that add links, files or marks
-remove them again. GitHub Actions runs the database tests every night at 11:30 pm IST
+78 tests: the rules, what `pbl_app` may and may not do, sign-in and passwords (46
+database tests), and the web server's sessions, every page for every role, submitting
+with a report, who sees a project and its marks, links and files (32 API tests). The
+database tests run inside a transaction that is rolled back, so the data is untouched;
+the API tests that add or change anything put it back. GitHub Actions runs the database tests every night at 11:30 pm IST
 against a fresh pgvector container.
 
 ## Viva demo
@@ -293,7 +306,7 @@ against a fresh pgvector container.
 psql "<ADMIN_DATABASE_URL>" -f sql/demo.sql
 ```
 
-Eighteen steps: each rule failing with its own error message, keyword vs. meaning
+Twenty steps: each rule failing with its own error message, keyword vs. meaning
 search, the approval rule, `pbl_app`'s privileges, joins, views and the index plans. It
 all runs in a transaction that is rolled back, so it can be repeated. Expected output is
 in [docs/demo-output.txt](docs/demo-output.txt); the order to show things in and likely
@@ -303,7 +316,7 @@ viva questions are in [docs/viva.md](docs/viva.md).
 
 ```
 sql/          01-07 build the database in order; demo.sql is the viva script
-scripts/      setup_db.py, load_data.py, embed_projects.py
+scripts/      setup_db.py, load_data.py, embed_projects.py, sample_reports.py
 finder/       shared Python: settings, database access, file storage, embeddings
 api/          the FastAPI server: sessions, and the routes for each area
 web/          the React front end (src/pages has one file per page)
@@ -317,7 +330,7 @@ docs/         design, security, viva notes, demo output
 The 60 projects, 126 students and 8 faculty members in `data/` are invented for testing.
 The topics are typical of engineering PBLs, and every name, PRN and email is made up,
 apart from the demo student, who carries a team member's name (Rohan Deogaonkar) with a
-made-up PRN and email. The emails use the reserved `example.edu` domain. More in
+made-up PRN and email. Each sample project has a one-page sample report. More in
 [data/README.md](data/README.md).
 
 ## Team

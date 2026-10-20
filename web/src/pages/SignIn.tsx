@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api, type Account, type DemoAccount } from "../api";
-import { Logo } from "../components/Shell";
+import { ThemeSwitch } from "../components/Shell";
 import { Notice } from "../components/ui";
 
 const refusal = (e: unknown) => (e as Error).message;
@@ -46,20 +46,20 @@ export default function SignIn({ notice, demo, onSignedIn }: {
   return (
     <div className="signin">
       <div className="signin-box">
-        <div className="row" style={{ gap: 10 }}>
-          <Logo />
-          <div className="wordmark">pbl<span>/</span>tracker</div>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div className="row" style={{ gap: 10 }}><div className="wordmark">PBL Tracker</div><span className="muted small">MIT-WPU</span></div>
+          <ThemeSwitch />
         </div>
         <div>
           <h1>Sign in</h1>
-          <p className="muted" style={{ margin: "6px 0 0" }}>PBL projects, proposals, reports and marks for the department.</p>
+          <p className="muted" style={{ margin: "6px 0 0" }}>For MIT-WPU students and faculty. Sign in with your PRN or your @mitwpu.edu.in email.</p>
         </div>
         {notice && <Notice tone="info" kind="Signed out">{notice}</Notice>}
         <form className="card pad-lg stack" style={{ gap: 14 }} onSubmit={submit}>
           <label className="field">
             <span>PRN or college email</span>
             <input className="input" value={login} onChange={(e) => setLogin(e.target.value)} maxLength={120}
-                   autoComplete="username" placeholder="1032240101 or name@example.edu" autoFocus />
+                   autoComplete="username" placeholder="PRN or name@mitwpu.edu.in" autoFocus />
           </label>
           <label className="field">
             <span>Password</span>
@@ -72,7 +72,7 @@ export default function SignIn({ notice, demo, onSignedIn }: {
         <div className="small muted">Forgot your password? The PBL coordinator can give you a temporary one.</div>
         {demo.length > 0 && (
           <div className="stack" style={{ gap: 8 }}>
-            <div className="label">Sample accounts · demo</div>
+            <div className="label">Sample accounts (demo)</div>
             <div className="card demo-list" style={{ overflow: "hidden" }}>
               {demo.map((a) => (
                 <button key={a.login} className="demo-item" onClick={() => quick(a)} disabled={busy}>

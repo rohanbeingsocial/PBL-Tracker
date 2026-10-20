@@ -3,28 +3,27 @@ import { api, whenSignedOut, type Account, type DemoAccount, type Reference } fr
 import { navFor, Shell } from "./components/Shell";
 import { Failed, Loading } from "./components/ui";
 import { AppContext } from "./context";
-import { usePath, type Path } from "./hooks";
+import { usePath, type Page } from "./hooks";
 import AccountPage from "./pages/Account";
-import Check from "./pages/Check";
 import Home from "./pages/Home";
-import Marks from "./pages/Marks";
 import People from "./pages/People";
+import ProjectPage from "./pages/Project";
 import Review from "./pages/Review";
 import Search from "./pages/Search";
 import SignIn from "./pages/SignIn";
 import Subjects from "./pages/Subjects";
+import Submit from "./pages/Submit";
 import Trends from "./pages/Trends";
 
-const PAGES: Record<Path, { crumb: string; title: string; page: () => ReactNode }> = {
-  "/": { crumb: "Home", title: "", page: () => <Home /> },
-  "/search": { crumb: "Projects", title: "Search projects", page: () => <Search /> },
-  "/check": { crumb: "Projects", title: "Check an idea", page: () => <Check /> },
-  "/trends": { crumb: "Projects", title: "Trends", page: () => <Trends /> },
-  "/review": { crumb: "Faculty", title: "Review proposals", page: () => <Review /> },
-  "/marks": { crumb: "Faculty", title: "Enter marks", page: () => <Marks /> },
-  "/people": { crumb: "Admin", title: "People", page: () => <People /> },
-  "/subjects": { crumb: "Admin", title: "Subjects", page: () => <Subjects /> },
-  "/account": { crumb: "Account", title: "Your account", page: () => <AccountPage /> },
+const PAGES: Record<Page, () => ReactNode> = {
+  "/": () => <Home />,
+  "/search": () => <Search />,
+  "/submit": () => <Submit />,
+  "/trends": () => <Trends />,
+  "/review": () => <Review />,
+  "/people": () => <People />,
+  "/subjects": () => <Subjects />,
+  "/account": () => <AccountPage />,
 };
 
 export default function App() {
@@ -97,22 +96,22 @@ export default function App() {
   }
   if (!ref) return <div className="page"><Loading /></div>;
 
-  // A page the account doesn't have (after switching accounts, or a typed URL) opens Home.
-  const allowed = navFor(me, 0).map((n) => n.path as string).concat("/account");
-  const current = (allowed.includes(path) ? path : "/") as Path;
+  // A project's own page, or one of the pages this account has. Anything else (after
+  // switching accounts, or a typed URL) opens Home.
+  const projectId = /^\/projects\/(\d+)$/.exec(path)?.[1];
+  const allowed: string[] = navFor(me, 0).map((n) => n.path).concat("/account");
+  const current = projectId ? path : allowed.includes(path) ? path : "/";
   if (current !== path) window.history.replaceState(null, "", current);
-  const info = PAGES[current];
-  const crumbPage = current === "/" ? (me.is_admin ? "Overview" : me.name) : info.title;
+  const page = projectId ? <ProjectPage id={Number(projectId)} /> : PAGES[current as Page]();
 
   return (
     <AppContext.Provider value={{ me, ref, go, toast, refreshCounts }}>
       <Shell me={me} path={current} go={go} waiting={waiting} demo={demo} onSwitch={switchTo}
-             switchError={switchError} onSignOut={signOut} crumb={[info.crumb, crumbPage]} year={ref.current_year}>
+             switchError={switchError} onSignOut={signOut} wide={!!projectId}>
         {/* The key makes every page start fresh for each account. */}
-        <div key={`${me.login}${current}`}>{info.page()}</div>
+        <div key={`${me.login}${current}`}>{page}</div>
       </Shell>
-      {toastText && <div className="toast" role="status"><b>✓</b>{toastText}</div>}
+      {toastText && <div className="toast" role="status">{toastText}</div>}
     </AppContext.Provider>
   );
 }
-
