@@ -9,13 +9,12 @@ CREATE INDEX projects_search_idx ON projects USING gin (search_text);
 CREATE INDEX projects_embedding_idx ON projects USING hnsw (embedding vector_cosine_ops);
 
 -- Postgres does not index foreign keys by itself. These back the common joins.
--- (project_members, project_tags and project_links already start with project_id
--- in their primary key or UNIQUE constraint.)
+-- (project_members, project_tags, project_links and project_files already start
+-- with project_id in their primary key or UNIQUE constraint.)
 CREATE INDEX projects_faculty_idx          ON projects (faculty_id);
 CREATE INDEX projects_subject_year_idx     ON projects (subject_id, academic_year);
 CREATE INDEX project_members_user_idx      ON project_members (user_id);
 CREATE INDEX project_tags_tag_idx          ON project_tags (tag_id);
-CREATE INDEX project_files_project_idx     ON project_files (project_id);
 
 -- The same title twice in one subject and year is almost always a double submit.
 CREATE UNIQUE INDEX projects_title_once_per_year ON projects (subject_id, academic_year, lower(title));

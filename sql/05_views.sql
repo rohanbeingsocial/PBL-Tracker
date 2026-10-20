@@ -5,8 +5,9 @@ SET search_path = pbl, extensions;
 
 -- One row per project with everything a project card shows. Members, tags, links and
 -- files come from subqueries rather than joins: joining all four would multiply rows
--- (3 members x 4 tags x 2 links = 24 rows for one project). Marks are left out; only
--- the team and faculty see those, so the app reads them from projects directly.
+-- (3 members x 4 tags x 2 links = 24 rows for one project). Marks are left out: only
+-- the team and its faculty member see them, unless the team has made them public
+-- (marks_public), so the app reads them from projects when it may show them.
 CREATE VIEW project_cards AS
 SELECT p.project_id,
        p.title,
@@ -19,6 +20,8 @@ SELECT p.project_id,
        p.project_type,
        p.status,
        p.review_note,
+       p.decided_at,
+       p.marks_public,
        (SELECT string_agg(u.name, ', ' ORDER BY pm.is_leader DESC, u.name)
           FROM project_members pm
           JOIN users u ON u.user_id = pm.user_id
@@ -47,9 +50,9 @@ JOIN subjects s ON s.subject_id = p.subject_id
 JOIN users f    ON f.user_id = p.faculty_id;
 
 
--- Proposals waiting for a decision, each with its closest existing project.
--- LATERAL runs the nearest-neighbour search once per proposal, using that
--- proposal's own embedding.
+-- Submissions waiting for a decision, each with its closest existing project.
+-- LATERAL runs the nearest-neighbour search once per submission, using that
+-- submission's own embedding.
 CREATE VIEW review_queue AS
 SELECT p.project_id,
        p.title,
@@ -76,7 +79,7 @@ LEFT JOIN LATERAL (
     ORDER BY o.embedding <=> p.embedding
     LIMIT 1
 ) nn ON true
-WHERE p.status = 'proposed';
+WHERE p.status = 'submitted';
 
 
 -- Pairs of projects that are about the same thing. A plain self-join compares every

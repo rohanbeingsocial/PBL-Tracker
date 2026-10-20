@@ -125,9 +125,11 @@ $$;
 
 -- The only way a project gets created from the app. Everything happens in one
 -- transaction: if one PRN is wrong or one link is malformed, nothing is saved.
+-- The report is required; the presentation is optional. The app stores both files
+-- in the bucket first and passes their names, paths and sizes here.
 --
 -- SECURITY DEFINER means it runs with the rights of the function's owner, so the
--- app's login needs no INSERT rights on projects. The status is always 'proposed'
+-- app's login needs no INSERT rights on projects. The status is always 'submitted'
 -- and the year is always the current one, whatever the caller sends. The student
 -- who submits it becomes the team leader.
 CREATE FUNCTION submit_project(
@@ -141,7 +143,13 @@ CREATE FUNCTION submit_project(
     p_tags          text[],
     p_link_labels   text[],
     p_link_urls     text[],
-    p_embedding     double precision[]
+    p_embedding     double precision[],
+    p_report_name   text,
+    p_report_path   text,
+    p_report_size   int,
+    p_ppt_name      text DEFAULT NULL,
+    p_ppt_path      text DEFAULT NULL,
+    p_ppt_size      int  DEFAULT NULL
 ) RETURNS int
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -165,6 +173,10 @@ BEGIN
     WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.prn = m AND u.role = 'student');
     IF v_unknown IS NOT NULL THEN
         RAISE EXCEPTION 'No student with PRN %', v_unknown USING ERRCODE = 'check_violation';
+    END IF;
+
+    IF p_report_path IS NULL THEN
+        RAISE EXCEPTION 'A project can only be submitted with its report' USING ERRCODE = 'check_violation';
     END IF;
 
     IF coalesce(cardinality(p_link_labels), 0) <> coalesce(cardinality(p_link_urls), 0) THEN
@@ -207,6 +219,14 @@ BEGIN
     SELECT v_project_id, btrim(l.label), btrim(l.url)
     FROM unnest(p_link_labels, p_link_urls) AS l(label, url)
     ON CONFLICT (project_id, url) DO NOTHING;
+
+    INSERT INTO project_files (project_id, kind, file_name, storage_path, size_bytes, uploaded_by)
+    VALUES (v_project_id, 'report', btrim(p_report_name), p_report_path, p_report_size, p_leader_id);
+
+    IF p_ppt_path IS NOT NULL THEN
+        INSERT INTO project_files (project_id, kind, file_name, storage_path, size_bytes, uploaded_by)
+        VALUES (v_project_id, 'ppt', btrim(p_ppt_name), p_ppt_path, p_ppt_size, p_leader_id);
+    END IF;
 
     RETURN v_project_id;
 END;

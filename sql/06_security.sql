@@ -17,6 +17,13 @@ BEGIN
     END IF;
 END $$;
 
+-- The owner may switch to pbl_app (SET ROLE, used in sql/demo.sql) but doesn't get
+-- its rights otherwise. On Supabase the owner isn't a superuser, so this is needed.
+DO $$
+BEGIN
+    EXECUTE format('GRANT pbl_app TO %I WITH INHERIT FALSE, SET TRUE', current_user);
+END $$;
+
 ALTER ROLE pbl_app CONNECTION LIMIT 20;
 ALTER ROLE pbl_app SET statement_timeout = '5s';
 ALTER ROLE pbl_app SET idle_in_transaction_session_timeout = '30s';
@@ -50,12 +57,15 @@ GRANT SELECT (user_id, name, email, prn, role, is_admin, must_change_password,
 
 
 -- Changing ---------------------------------------------------------------------
--- Column-level UPDATE: the review decision, marks, and the embedding the app makes
--- for older projects. Title, abstract, subject and faculty can't be changed by the app.
-GRANT UPDATE (status, review_note, marks, embedding) ON projects TO pbl_app;
+-- Column-level UPDATE: the review decision, marks, whether the team shows its marks,
+-- and the embedding the app makes for older projects. Title, abstract, subject and
+-- faculty can't be changed by the app.
+GRANT UPDATE (status, review_note, marks, marks_public, embedding) ON projects TO pbl_app;
 
--- Links and files are added and removed after a project exists.
+-- Links and files are added and removed after a project exists. A new report or
+-- presentation replaces the old one in place.
 GRANT INSERT, DELETE ON project_links, project_files TO pbl_app;
+GRANT UPDATE (file_name, storage_path, size_bytes, uploaded_by, uploaded_at) ON project_files TO pbl_app;
 
 -- Admin pages: subjects, and switching people on or off or making them admins.
 GRANT INSERT, UPDATE ON subjects TO pbl_app;
@@ -71,7 +81,8 @@ GRANT EXECUTE ON FUNCTION
       keyword_search(text, int),
       similar_projects(double precision[], int, int),
       hybrid_search(text, double precision[], int),
-      submit_project(int, text, text, int, int, text[], text, text[], text[], text[], double precision[]),
+      submit_project(int, text, text, int, int, text[], text, text[], text[], text[], double precision[],
+                     text, text, int, text, text, int),
       sign_in(text, text),
       change_password(int, text, text),
       create_user(text, text, text, text, boolean),

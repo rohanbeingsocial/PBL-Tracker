@@ -4,10 +4,9 @@
 SET search_path = pbl, extensions;
 
 
--- 1. Status changes only move forward: proposed -> approved or rejected,
---    approved -> completed. A project's faculty_id has to point to a faculty member,
---    and marks can only be given to an approved or completed project, up to its
---    subject's max_marks.
+-- 1. A submitted project is approved or rejected once, and decided_at records when.
+--    A project's faculty_id has to point to a faculty member, and marks can only be
+--    given to an approved project, up to its subject's max_marks.
 CREATE FUNCTION trg_check_project() RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pbl, pg_temp
@@ -16,11 +15,12 @@ DECLARE
     v_role  varchar;
     v_max   numeric;
 BEGIN
-    IF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status
-       AND NOT (   (OLD.status = 'proposed' AND NEW.status IN ('approved', 'rejected'))
-                OR (OLD.status = 'approved' AND NEW.status = 'completed')) THEN
-        RAISE EXCEPTION 'Status cannot change from % to %', OLD.status, NEW.status
-              USING ERRCODE = 'check_violation';
+    IF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status THEN
+        IF NOT (OLD.status = 'submitted' AND NEW.status IN ('approved', 'rejected')) THEN
+            RAISE EXCEPTION 'Status cannot change from % to %', OLD.status, NEW.status
+                  USING ERRCODE = 'check_violation';
+        END IF;
+        NEW.decided_at := now();
     END IF;
 
     IF TG_OP = 'INSERT' OR NEW.faculty_id IS DISTINCT FROM OLD.faculty_id THEN
@@ -32,8 +32,8 @@ BEGIN
     END IF;
 
     IF NEW.marks IS NOT NULL THEN
-        IF NEW.status NOT IN ('approved', 'completed') THEN
-            RAISE EXCEPTION 'Only approved or completed projects can be marked (this one is %)', NEW.status
+        IF NEW.status <> 'approved' THEN
+            RAISE EXCEPTION 'Only approved projects can be marked (this one is %)', NEW.status
                   USING ERRCODE = 'check_violation';
         END IF;
 
@@ -71,7 +71,7 @@ BEFORE INSERT OR UPDATE OF user_id ON project_members
 FOR EACH ROW EXECUTE FUNCTION trg_check_member();
 
 
--- 3. Approving a proposal that is a near duplicate of an existing project needs a
+-- 3. Approving a project that is a near duplicate of an existing one needs a
 --    review note that says what is different about it.
 CREATE FUNCTION trg_check_near_duplicate() RETURNS trigger
 LANGUAGE plpgsql
@@ -92,7 +92,7 @@ BEGIN
          LIMIT 1;
 
         IF similarity_band(v_similarity) = 'near duplicate' THEN
-            RAISE EXCEPTION 'This proposal is very close to "%" (similarity %)',
+            RAISE EXCEPTION 'This project is very close to "%" (similarity %)',
                             v_title, round(v_similarity::numeric, 2)
                   USING ERRCODE = 'check_violation',
                         HINT = 'Approve it with a review note that says how this project is different.';
@@ -106,7 +106,7 @@ $$;
 CREATE TRIGGER check_near_duplicate
 BEFORE UPDATE OF status ON projects
 FOR EACH ROW
-WHEN (OLD.status = 'proposed' AND NEW.status = 'approved')
+WHEN (OLD.status = 'submitted' AND NEW.status = 'approved')
 EXECUTE FUNCTION trg_check_near_duplicate();
 
 
@@ -127,3 +127,26 @@ BEFORE UPDATE OF title, abstract ON projects
 FOR EACH ROW
 WHEN (OLD.title IS DISTINCT FROM NEW.title OR OLD.abstract IS DISTINCT FROM NEW.abstract)
 EXECUTE FUNCTION trg_clear_stale_embedding();
+
+
+-- 5. A project keeps its report. A new report replaces the old one (an UPDATE of
+--    the same row), but the row itself can only go when the whole project is deleted.
+CREATE FUNCTION trg_keep_report() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pbl, pg_temp
+AS $$
+BEGIN
+    -- During ON DELETE CASCADE the project row is already gone.
+    IF EXISTS (SELECT 1 FROM projects p WHERE p.project_id = OLD.project_id) THEN
+        RAISE EXCEPTION 'A project''s report can be replaced but not removed'
+              USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+
+CREATE TRIGGER keep_report
+BEFORE DELETE ON project_files
+FOR EACH ROW
+WHEN (OLD.kind = 'report')
+EXECUTE FUNCTION trg_keep_report();

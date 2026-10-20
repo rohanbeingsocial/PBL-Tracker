@@ -27,8 +27,9 @@ CREATE SCHEMA pbl;
 SET search_path = pbl, extensions;
 
 
--- Everyone who signs in: students and faculty. Students sign in with their PRN or
--- email, faculty with their email. Emails are stored in lowercase only, so UNIQUE
+-- Everyone who signs in: students and faculty of MIT-WPU. Students sign in with
+-- their PRN or email, faculty with their email. Only college addresses
+-- (@mitwpu.edu.in) are accepted. Emails are stored in lowercase only, so UNIQUE
 -- can't be dodged with capital letters. Only bcrypt hashes are stored, and the app's
 -- login can't read that column (06_security.sql).
 CREATE TABLE users (
@@ -44,6 +45,7 @@ CREATE TABLE users (
     is_active             BOOLEAN      NOT NULL DEFAULT true,     -- false after they leave; their projects stay
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
 
+    CONSTRAINT college_email           CHECK (email LIKE '%@mitwpu.edu.in'),
     CONSTRAINT students_have_a_prn     CHECK ((role = 'student') = (prn IS NOT NULL)),
     CONSTRAINT only_faculty_are_admins CHECK (NOT is_admin OR role = 'faculty')
 );
@@ -57,6 +59,8 @@ CREATE TABLE subjects (
     max_marks   NUMERIC(5,1) NOT NULL CHECK (max_marks > 0)
 );
 
+-- A team submits its finished project, report included, to one subject and one
+-- faculty member. That faculty member approves or rejects it and gives the marks.
 CREATE TABLE projects (
     project_id     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     title          VARCHAR(200) NOT NULL CHECK (length(btrim(title)) >= 5),
@@ -65,10 +69,12 @@ CREATE TABLE projects (
     faculty_id     INT          NOT NULL REFERENCES users(user_id),       -- must be faculty (trigger)
     academic_year  VARCHAR(7)   NOT NULL,                                 -- '2026-27'
     project_type   VARCHAR(10)  NOT NULL CHECK (project_type IN ('software', 'hardware', 'both')),
-    status         VARCHAR(10)  NOT NULL DEFAULT 'proposed'
-                   CHECK (status IN ('proposed', 'approved', 'rejected', 'completed')),
+    status         VARCHAR(10)  NOT NULL DEFAULT 'submitted'
+                   CHECK (status IN ('submitted', 'approved', 'rejected')),
     review_note    VARCHAR(1000),
+    decided_at     TIMESTAMPTZ,                         -- when the faculty member approved or rejected it (trigger)
     marks          NUMERIC(5,1) CHECK (marks >= 0),     -- the upper limit is the subject's max_marks (trigger)
+    marks_public   BOOLEAN      NOT NULL DEFAULT false, -- marks are seen by the team and faculty unless the team shows them
     search_text    TSVECTOR GENERATED ALWAYS AS (
                        setweight(to_tsvector('english', title), 'A') ||
                        setweight(to_tsvector('english', abstract), 'B')
@@ -79,7 +85,9 @@ CREATE TABLE projects (
     -- Postgres tests CHECK constraints in alphabetical order of their names, so the
     -- format check always runs before the ::int casts in the sequence check.
     CONSTRAINT academic_year_format   CHECK (academic_year ~ '^20[0-9]{2}-[0-9]{2}$'),
-    CONSTRAINT academic_year_sequence CHECK (right(academic_year, 2)::int = (left(academic_year, 4)::int + 1) % 100)
+    CONSTRAINT academic_year_sequence CHECK (right(academic_year, 2)::int = (left(academic_year, 4)::int + 1) % 100),
+    CONSTRAINT decided_once_reviewed  CHECK ((status = 'submitted') = (decided_at IS NULL)),
+    CONSTRAINT decided_after_submit   CHECK (decided_at >= created_at)
 );
 
 -- A team can have any number of students, and a student can be in several projects
@@ -115,6 +123,9 @@ CREATE TABLE project_tags (
 
 -- Reports and presentations. The file itself is in the storage bucket; this row
 -- says which project it belongs to, who uploaded it and where in the bucket it is.
+-- A project has one report (a PDF, so it can be read in the browser) and at most one
+-- presentation. A new upload replaces the old one. The report can't be removed
+-- (04_triggers.sql); submit_project() won't create a project without it.
 CREATE TABLE project_files (
     file_id       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     project_id    INT          NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -123,5 +134,7 @@ CREATE TABLE project_files (
     storage_path  VARCHAR(300) NOT NULL UNIQUE,
     size_bytes    INT          NOT NULL CHECK (size_bytes BETWEEN 1 AND 20971520),   -- 20 MB
     uploaded_by   INT          NOT NULL REFERENCES users(user_id),
-    uploaded_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+    uploaded_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    CONSTRAINT one_file_of_each_kind UNIQUE (project_id, kind),
+    CONSTRAINT reports_are_pdf       CHECK (kind <> 'report' OR storage_path LIKE '%.pdf')
 );
