@@ -38,7 +38,7 @@ function Heatmap({ rows, years }: { rows: TrendsData["tags"]; years: string[] })
               <div key={y} title={`${d} · ${y} · ${n}`} role="cell"
                    style={{ height: 26, borderRadius: 3, display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: 12, fontWeight: 600,
-                            background: n ? `color-mix(in oklab, var(--accent) ${Math.round(22 + 78 * share)}%, var(--surface-2))` : "var(--surface-2)",
+                            background: n ? `color-mix(in oklab, var(--accent-fill) ${Math.round(22 + 78 * share)}%, var(--surface-2))` : "var(--surface-2)",
                             color: share > 0.55 ? "var(--accent-fg)" : "var(--fg-soft)" }}>
                 {n || ""}
               </div>
@@ -78,7 +78,7 @@ export default function Trends() {
             <div className="strong grow">Most used stacks per year</div>
             <span className="muted" style={{ fontSize: 12 }}>fewer</span>
             <div className="row" style={{ gap: 2 }}>
-              {[20, 45, 70, 100].map((p) => <span key={p} style={{ width: 14, height: 10, borderRadius: 2, background: `color-mix(in oklab, var(--accent) ${p}%, var(--surface-2))` }} />)}
+              {[20, 45, 70, 100].map((p) => <span key={p} style={{ width: 14, height: 10, borderRadius: 2, background: `color-mix(in oklab, var(--accent-fill) ${p}%, var(--surface-2))` }} />)}
             </div>
             <span className="muted" style={{ fontSize: 12 }}>more</span>
           </div>
@@ -133,7 +133,7 @@ export default function Trends() {
                 <div key={name} style={{ display: "grid", gridTemplateColumns: "110px minmax(0, 1fr) 28px", gap: 12, alignItems: "center" }}>
                   <span className="soft" style={{ fontSize: 13 }}>{name}</span>
                   <div style={{ height: 14, background: "var(--surface-2)", borderRadius: 2 }}>
-                    <div style={{ height: "100%", width: `${(count / topCount) * 100}%`, background: "var(--accent)", borderRadius: 2 }} />
+                    <div style={{ height: "100%", width: `${(count / topCount) * 100}%`, background: "var(--accent-fill)", borderRadius: 2 }} />
                   </div>
                   <span style={{ fontSize: 13, textAlign: "right" }}>{count}</span>
                 </div>

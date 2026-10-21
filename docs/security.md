@@ -78,13 +78,14 @@ Wi-Fi, and anyone who finds a leaked password.
   20 MB, and a PDF has to start with `%PDF-`. This is checked before the file is stored.
   The stored name is `<project id>/<random hex><extension>`; the name the user gave is
   only kept as text in `project_files`, so it can't be used to write somewhere else.
-  Presentations download as attachments. A PDF can be opened inline so the project page
-  can show the report, and that answer may only be framed by the app's own pages.
+  Presentations download as attachments. The project page draws the report with PDF.js
+  (from the app's own files, no outside scripts); "Open" shows the PDF in its own tab,
+  and nothing may frame it.
 - **The storage key stays on the server.** The B2 application key is read from `.env`
   by `finder/storage.py`. It works on one bucket only, the browser never talks to B2,
   and the bucket is private.
 - **Security headers.** A Content Security Policy that only allows the app's own scripts,
-  styles and fonts, no framing (apart from the report, by the app itself), `nosniff`, and `no-store` on every API answer.
+  styles and fonts, no framing, `nosniff`, and `no-store` on every API answer.
 - **Demo account switcher.** Off unless `DEMO_SWITCHER` is set. It only signs in the five
   listed sample users, through `sign_in()` with `SEED_PASSWORD`, so it can't get past a
   switched-off account or a changed password. With it on, anyone who can open the app
@@ -166,7 +167,7 @@ sign-out, idle sessions, and a session ending after a password change.
   behind HTTPS before letting other computers in, or passwords and the cookie cross the
   network unencrypted.
 - **Uploaded files are checked by extension, not scanned.** The server never opens them,
-  and a PDF report is shown by the browser's own viewer, but a file could still carry a macro or
+  and a PDF report is drawn by PDF.js in the page, but a file could still carry a macro or
   malware. The college's antivirus on the downloading machine is the last line.
 - The sample accounts share one password. Real accounts should be made on the People
   page, which hands out a temporary password that has to be changed.

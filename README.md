@@ -41,7 +41,7 @@ across different years.
 
 | Page | Who | What |
 |---|---|---|
-| Home | everyone | Students: their projects and marks. Faculty: submissions waiting for review and approved projects not graded yet. Admin: totals, projects per year, latest submissions |
+| Dashboard | everyone | Students: where each of their projects is (submitted, approved, graded), marks, status chart, popular stacks, recently approved projects. Faculty: submissions waiting for review with how close each is to a past project, projects by subject, spread of marks given, projects not graded yet. Admin: totals, projects per year by status, projects per subject, what each faculty member still has to review, latest submissions |
 | Search projects | everyone | Every approved project from every year, by name or by idea (keyword, meaning, or both merged with Reciprocal Rank Fusion), with subject, technology, type and year filters |
 | Project | everyone | The report opens on the left; on the right the team, subject, year, the faculty member who approved it, the dates, technologies, links, presentation and abstract |
 | Submit a project | students | Title, abstract, subject, the faculty member it goes to, teammates, technologies, the report (PDF, required), and optionally the presentation, a GitHub link and a working demo link. The closest past projects show up next to the form |

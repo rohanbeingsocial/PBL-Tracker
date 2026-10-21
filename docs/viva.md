@@ -34,7 +34,7 @@ and a .pptx on the desktop for steps 3 and 4.
    project, add a working demo link, replace the report with the other PDF and add the
    .pptx as the presentation. Try a .txt as the report: refused. The report can only be
    replaced, never removed.
-5. **Faculty (1.5 min).** Sign in as `srao@mitwpu.edu.in`. Home shows what is waiting.
+5. **Faculty (1.5 min).** Sign in as `srao@mitwpu.edu.in`. The dashboard shows what is waiting and how close each submission is to a past project.
    Open *Automatic Classroom Attendance from CCTV Footage*: the report is on the left,
    the decision on the right. Approve with an empty note and the database refuses, naming
    the closest project. Write a note and approve again with 28 marks: it goes through,

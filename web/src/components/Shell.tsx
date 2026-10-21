@@ -2,26 +2,28 @@ import { useState, type ReactNode } from "react";
 import type { Account, DemoAccount } from "../api";
 import type { Page, Path } from "../hooks";
 import { applyTheme, savedTheme, type Theme } from "../theme";
+import { Icon, type IconName } from "./charts";
 import { Segmented } from "./ui";
 
 interface NavItem {
   path: Page;
   label: string;
+  icon: IconName;
   group: string;
   count?: number;
 }
 
 export function navFor(me: Account, waiting: number): NavItem[] {
   const items: NavItem[] = [
-    { path: "/", label: "Home", group: "" },
-    { path: "/search", label: "Search projects", group: "" },
+    { path: "/", label: "Dashboard", icon: "home", group: "" },
+    { path: "/search", label: "Search projects", icon: "search", group: "" },
   ];
-  if (me.role === "student") items.push({ path: "/submit", label: "Submit a project", group: "" });
-  items.push({ path: "/trends", label: "Trends", group: "" });
-  if (me.role === "faculty") items.push({ path: "/review", label: "Review and marks", group: "Faculty", count: waiting });
+  if (me.role === "student") items.push({ path: "/submit", label: "Submit a project", icon: "upload", group: "" });
+  items.push({ path: "/trends", label: "Trends", icon: "chart", group: "" });
+  if (me.role === "faculty") items.push({ path: "/review", label: "Review and marks", icon: "review", group: "Faculty", count: waiting });
   if (me.is_admin) {
-    items.push({ path: "/people", label: "People", group: "Admin" });
-    items.push({ path: "/subjects", label: "Subjects", group: "Admin" });
+    items.push({ path: "/people", label: "People", icon: "people", group: "Admin" });
+    items.push({ path: "/subjects", label: "Subjects", icon: "book", group: "Admin" });
   }
   return items;
 }
@@ -83,6 +85,7 @@ export function Shell({ me, path, go, waiting, demo, onSwitch, switchError, onSi
                 {heading && <div className="nav-group">{heading}</div>}
                 <button className={`nav-item${path === item.path ? " active" : ""}`}
                         aria-current={path === item.path ? "page" : undefined} onClick={() => go(item.path)}>
+                  <Icon name={item.icon} size={17} />
                   <span>{item.label}</span>
                   {!!item.count && <span className="nav-count">{item.count}</span>}
                 </button>

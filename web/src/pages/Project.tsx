@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, type ProjectDetail } from "../api";
 import { Attachments } from "../components/Attachments";
+import { ReportViewer } from "../components/ReportViewer";
 import { AppLink, Closeness, Failed, FILE_KIND, Loading, PageHead, StatusTag, TYPE_LABEL, Toggle } from "../components/ui";
 import { useApp } from "../context";
 import { formatDay } from "../format";
@@ -123,11 +124,11 @@ export default function ProjectPage({ id }: { id: number }) {
   const decidedLabel = p.status === "approved" ? "Approved" : "Rejected";
   return (
     <>
-      <PageHead title={p.title} back={me.role === "student" && p.is_member ? { to: "/", label: "Home" } : { to: "/search", label: "Search" }} />
+      <PageHead title={p.title} back={me.role === "student" && p.is_member ? { to: "/", label: "Dashboard" } : { to: "/search", label: "Search" }} />
       <div className="project">
         <div>
           {report
-            ? <iframe className="report-frame" src={`/api/files/${report.file_id}?inline=true`} title={`Report: ${report.file_name}`} />
+            ? <ReportViewer fileId={report.file_id} fileName={report.file_name} />
             : <div className="card report-missing muted">No report on file for this project.</div>}
         </div>
         <div className="details">
