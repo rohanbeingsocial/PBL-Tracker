@@ -1,68 +1,64 @@
 """Where uploaded reports and presentations are kept.
 
-With SUPABASE_URL and SUPABASE_SECRET_KEY set, files go to a private Supabase
-Storage bucket (SUPABASE_BUCKET, default 'project-files'). Without them, for a
-laptop demo, they go to the uploads/ folder next to the code. Either way the
-database only stores the path; the bytes never go into Postgres.
+With B2_ENDPOINT, B2_KEY_ID, B2_APPLICATION_KEY and B2_BUCKET set, files go to a
+private Backblaze B2 bucket through its S3-compatible API. Without them, for a laptop
+demo, they go to the uploads/ folder next to the code. Either way the database only
+stores the path; the bytes never go into Postgres.
 """
+from functools import cache
 from pathlib import Path
-
-import httpx
 
 from finder.config import optional
 
 LOCAL_DIR = Path(__file__).resolve().parent.parent / "uploads"
 
 
-def _supabase() -> tuple[str, str, str] | None:
-    url, key = optional("SUPABASE_URL").rstrip("/"), optional("SUPABASE_SECRET_KEY")
-    if not (url and key):
-        return None
-    return url, key, optional("SUPABASE_BUCKET") or "project-files"
+def _bucket() -> str | None:
+    if all(optional(name) for name in ("B2_ENDPOINT", "B2_KEY_ID", "B2_APPLICATION_KEY", "B2_BUCKET")):
+        return optional("B2_BUCKET")
+    return None
 
 
-def _headers(key: str) -> dict[str, str]:
-    headers = {"apikey": key}
-    # Older service_role keys are JWTs and also go in Authorization. The newer
-    # sb_secret_ keys are not JWTs and only go in apikey.
-    if key.startswith("eyJ"):
-        headers["Authorization"] = f"Bearer {key}"
-    return headers
+@cache
+def _client():
+    import boto3     # only needed when a bucket is set up
+    from botocore.config import Config
 
-
-def where() -> str:
-    return "Supabase Storage" if _supabase() else "the uploads folder"
+    endpoint = optional("B2_ENDPOINT")
+    return boto3.client("s3", endpoint_url=endpoint if endpoint.startswith("https://") else f"https://{endpoint}",
+                        aws_access_key_id=optional("B2_KEY_ID"),
+                        aws_secret_access_key=optional("B2_APPLICATION_KEY"),
+                        # Newer boto3 adds extra checksum headers by default that not every
+                        # S3-compatible service accepts; only send them when required.
+                        config=Config(request_checksum_calculation="when_required",
+                                      response_checksum_validation="when_required"))
 
 
 def save(path: str, data: bytes, content_type: str) -> None:
-    remote = _supabase()
-    if remote is None:
+    bucket = _bucket()
+    if bucket is None:
         target = LOCAL_DIR / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         return
-    url, key, bucket = remote
-    response = httpx.post(f"{url}/storage/v1/object/{bucket}/{path}", content=data, timeout=60,
-                          headers={**_headers(key), "Content-Type": content_type, "x-upsert": "false"})
-    response.raise_for_status()
+    _client().put_object(Bucket=bucket, Key=path, Body=data, ContentType=content_type)
 
 
 def load(path: str) -> bytes:
-    remote = _supabase()
-    if remote is None:
+    bucket = _bucket()
+    if bucket is None:
         return (LOCAL_DIR / path).read_bytes()
-    url, key, bucket = remote
-    response = httpx.get(f"{url}/storage/v1/object/{bucket}/{path}", headers=_headers(key), timeout=60)
-    response.raise_for_status()
-    return response.content
+    return _client().get_object(Bucket=bucket, Key=path)["Body"].read()
 
 
 def delete(path: str) -> None:
-    remote = _supabase()
-    if remote is None:
+    bucket = _bucket()
+    if bucket is None:
         (LOCAL_DIR / path).unlink(missing_ok=True)
         return
-    url, key, bucket = remote
-    response = httpx.request("DELETE", f"{url}/storage/v1/object/{bucket}", headers=_headers(key),
-                             json={"prefixes": [path]}, timeout=60)
-    response.raise_for_status()
+    # B2 keeps old versions of a file, and a plain delete only hides it (the bytes
+    # still count against the free 10 GB). Deleting every version removes it for good.
+    listing = _client().list_object_versions(Bucket=bucket, Prefix=path)
+    for version in listing.get("Versions", []) + listing.get("DeleteMarkers", []):
+        if version["Key"] == path:
+            _client().delete_object(Bucket=bucket, Key=path, VersionId=version["VersionId"])
