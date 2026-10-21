@@ -56,9 +56,14 @@ async def security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
-    response.headers["Content-Security-Policy"] = (
-        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
-        "font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+    if response.headers.get("content-disposition", "").startswith("inline"):
+        # A report opened inside the project page: only our own pages may frame it.
+        # The browser's PDF viewer needs no other rules.
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+    else:
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+            "font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
     if request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response

@@ -1,5 +1,5 @@
-"""Pages everyone has after signing in: home, search, check an idea, trends, and the
-links and files of a project."""
+"""Pages everyone has after signing in: home, search, a project's own page, submitting
+a project, trends, and the links and files of a project."""
 import re
 import secrets
 from functools import lru_cache
@@ -7,7 +7,7 @@ from pathlib import PurePath
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from psycopg import sql
 from pydantic import BaseModel, Field
@@ -43,18 +43,30 @@ def reference(account: db.Account = session.anyone) -> dict:
         }
 
 
-def can_change(conn, project_id: int, account: db.Account) -> dict:
-    """The project, if this person may add or remove its links and files: a team
-    member, the project's faculty member, or an admin."""
+def access(conn, project_id: int, account: db.Account) -> dict:
+    """Who this person is to the project. Approved projects are open to everyone signed
+    in; a project still waiting, or rejected, only to its team, its faculty member and
+    the PBL coordinator. Anyone else gets 404, as if it didn't exist."""
     project = conn.execute(
-        """SELECT p.project_id, p.faculty_id,
+        """SELECT p.project_id, p.faculty_id, p.status, p.marks_public,
                   EXISTS (SELECT 1 FROM pbl.project_members pm
                           WHERE pm.project_id = p.project_id AND pm.user_id = %s) AS is_member
            FROM pbl.projects p WHERE p.project_id = %s""",
         (account.user_id, project_id)).fetchone()
     if project is None:
         raise HTTPException(404, "No such project.")
-    if not (project["is_member"] or project["faculty_id"] == account.user_id or account.is_admin):
+    project["is_faculty"] = project["faculty_id"] == account.user_id
+    project["involved"] = project["is_member"] or project["is_faculty"] or account.is_admin
+    if project["status"] != "approved" and not project["involved"]:
+        raise HTTPException(404, "No such project.")
+    return project
+
+
+def can_change(conn, project_id: int, account: db.Account) -> dict:
+    """The project, if this person may add or remove its links and files: a team
+    member, the project's faculty member, or an admin."""
+    project = access(conn, project_id, account)
+    if not project["involved"]:
         raise HTTPException(403, "Only the team, its faculty member or the PBL coordinator can change this project.")
     return project
 
@@ -63,16 +75,13 @@ def can_change(conn, project_id: int, account: db.Account) -> dict:
 
 def student_home(conn, account: db.Account) -> dict:
     mine = conn.execute(
-        """SELECT c.*, p.marks::float8, s.max_marks::float8, pm.is_leader,
-                  q.closest_title, q.closest_year, q.similarity, q.band, cl.abstract AS closest_abstract
+        """SELECT c.*, p.marks::float8, s.max_marks::float8, pm.is_leader
            FROM pbl.project_members pm
            JOIN pbl.project_cards c ON c.project_id = pm.project_id
            JOIN pbl.projects p      ON p.project_id = pm.project_id
            JOIN pbl.subjects s      ON s.subject_id = p.subject_id
-           LEFT JOIN pbl.review_queue q ON q.project_id = pm.project_id
-           LEFT JOIN pbl.projects cl    ON cl.project_id = q.closest_id
            WHERE pm.user_id = %s
-           ORDER BY c.academic_year DESC, c.title""", (account.user_id,)).fetchall()
+           ORDER BY c.academic_year DESC, c.created_at DESC""", (account.user_id,)).fetchall()
     return {"projects": mine}
 
 
@@ -82,21 +91,21 @@ def faculty_home(conn, account: db.Account) -> dict:
            FROM pbl.review_queue WHERE faculty_id = %s ORDER BY created_at""",
         (account.user_id,)).fetchall()
     counts = conn.execute(
-        """SELECT count(*) FILTER (WHERE status = 'approved') AS running,
-                  count(*) FILTER (WHERE status <> 'rejected') AS guided
+        """SELECT count(*) FILTER (WHERE status = 'approved') AS approved,
+                  count(*) FILTER (WHERE status = 'approved' AND marks IS NOT NULL) AS graded
            FROM pbl.projects WHERE faculty_id = %s""", (account.user_id,)).fetchone()
-    to_mark = conn.execute(
+    to_grade = conn.execute(
         """SELECT p.project_id, p.title, p.academic_year, s.code AS subject, s.max_marks::float8
            FROM pbl.projects p JOIN pbl.subjects s ON s.subject_id = p.subject_id
-           WHERE p.faculty_id = %s AND p.status IN ('approved', 'completed') AND p.marks IS NULL
+           WHERE p.faculty_id = %s AND p.status = 'approved' AND p.marks IS NULL
            ORDER BY p.academic_year DESC, p.title""", (account.user_id,)).fetchall()
-    return {"waiting": waiting, "running": counts["running"], "guided": counts["guided"], "to_mark": to_mark}
+    return {"waiting": waiting, **counts, "to_grade": to_grade}
 
 
 def admin_home(conn, account: db.Account) -> dict:
     projects = conn.execute(
-        """SELECT count(*) FILTER (WHERE status <> 'rejected') AS on_record,
-                  count(*) FILTER (WHERE status = 'proposed')  AS waiting,
+        """SELECT count(*) FILTER (WHERE status = 'approved')  AS approved,
+                  count(*) FILTER (WHERE status = 'submitted') AS waiting,
                   count(*) FILTER (WHERE embedding IS NULL)    AS unembedded
            FROM pbl.projects""").fetchone()
     users = conn.execute(
@@ -105,9 +114,8 @@ def admin_home(conn, account: db.Account) -> dict:
            FROM pbl.users""").fetchone()
     per_year = conn.execute(
         """SELECT academic_year,
-                  count(*) FILTER (WHERE status = 'completed') AS completed,
                   count(*) FILTER (WHERE status = 'approved')  AS approved,
-                  count(*) FILTER (WHERE status = 'proposed')  AS proposed
+                  count(*) FILTER (WHERE status = 'submitted') AS submitted
            FROM pbl.projects GROUP BY academic_year ORDER BY academic_year""").fetchall()
     recent = conn.execute(
         """SELECT project_id, title, subject, faculty, status, created_at
@@ -123,6 +131,50 @@ def home(account: db.Account = session.anyone) -> dict:
         return student_home(conn, account) if account.role == "student" else faculty_home(conn, account)
 
 
+# One project --------------------------------------------------------------------
+
+@router.get("/projects/{project_id}")
+def project_page(project_id: int, account: db.Account = session.anyone) -> dict:
+    with session.transaction(account) as conn:
+        who = access(conn, project_id, account)
+        card = conn.execute("SELECT * FROM pbl.project_cards WHERE project_id = %s", (project_id,)).fetchone()
+        marks = conn.execute(
+            """SELECT p.marks::float8, s.max_marks::float8 FROM pbl.projects p
+               JOIN pbl.subjects s ON s.subject_id = p.subject_id WHERE p.project_id = %s""",
+            (project_id,)).fetchone()
+        closest = None
+        if card["status"] == "submitted":
+            closest = conn.execute(
+                """SELECT q.closest_id, q.closest_title, q.closest_year, q.similarity, q.band
+                   FROM pbl.review_queue q WHERE q.project_id = %s""", (project_id,)).fetchone()
+    # Marks: the team, the faculty member and the coordinator always; others only if
+    # the team has chosen to show them.
+    show_marks = who["involved"] or card["marks_public"]
+    return {
+        **card,
+        "marks": marks["marks"] if show_marks else None,
+        "marks_hidden": not show_marks and marks["marks"] is not None,
+        "max_marks": marks["max_marks"],
+        "is_member": who["is_member"],
+        "is_faculty": who["is_faculty"],
+        "can_change": who["involved"],
+        "closest": closest,
+    }
+
+
+class MarksPublicBody(BaseModel):
+    public: bool
+
+
+@router.put("/projects/{project_id}/marks-public")
+def set_marks_public(project_id: int, body: MarksPublicBody, account: db.Account = session.anyone) -> dict:
+    with session.transaction(account) as conn:
+        if not access(conn, project_id, account)["is_member"]:
+            raise HTTPException(403, "Only the team decides whether its marks are shown to everyone.")
+        conn.execute("UPDATE pbl.projects SET marks_public = %s WHERE project_id = %s", (body.public, project_id))
+    return {"public": body.public}
+
+
 # Search -------------------------------------------------------------------------
 
 @router.get("/search")
@@ -133,11 +185,11 @@ def search(q: str = Query("", max_length=200),
            kind: list[str] = Query([]),
            year_from: str | None = None,
            year_to: str | None = None,
-           include_all: bool = False,
            account: db.Account = session.anyone) -> dict:
     query = q.strip()
-    # Filters are added as SQL pieces with placeholders, never by pasting values in.
-    conditions: list[sql.Composable] = []
+    # Only approved projects are searchable. Filters are added as SQL pieces with
+    # placeholders, never by pasting values in.
+    conditions: list[sql.Composable] = [sql.SQL("c.status = 'approved'")]
     params: list = []
     if year_from and year_to:
         conditions.append(sql.SQL("c.academic_year BETWEEN %s AND %s"))
@@ -151,9 +203,7 @@ def search(q: str = Query("", max_length=200),
     if kind:
         conditions.append(sql.SQL("c.project_type = ANY(%s)"))
         params.append(kind)
-    if not include_all:
-        conditions.append(sql.SQL("c.status IN ('approved', 'completed')"))
-    where = sql.SQL(" AND ").join(conditions) if conditions else sql.SQL("true")
+    where = sql.SQL(" AND ").join(conditions)
 
     if not query:
         statement = sql.SQL("""SELECT c.*, NULL AS snippet, NULL::float8 AS similarity, NULL AS band
@@ -185,11 +235,11 @@ def search(q: str = Query("", max_length=200),
     return {"rows": rows, "ranked": bool(query)}
 
 
-# Check an idea and submit it --------------------------------------------------------
+# Similar past projects, shown while a team fills in the submit form ------------------
 
 class IdeaBody(BaseModel):
     title: str = Field(max_length=200)
-    abstract: str = Field("", max_length=1500)
+    abstract: str = Field("", max_length=3000)
 
 
 @router.post("/check")
@@ -199,13 +249,112 @@ def check_idea(body: IdeaBody, account: db.Account = session.anyone) -> dict:
     vector = embed_text(project_text(body.title, body.abstract))
     with session.transaction(account) as conn:
         matches = conn.execute(
-            """SELECT c.*, s.similarity, s.band
+            """SELECT s.project_id, s.title, s.academic_year, s.subject, s.similarity, s.band
                FROM pbl.similar_projects(%s, 5) s
-               JOIN pbl.project_cards c ON c.project_id = s.project_id
+               WHERE s.status = 'approved' AND s.band <> 'different'
                ORDER BY s.similarity DESC""",
             (vector,)).fetchall()
     return {"matches": matches}
 
+
+# Files --------------------------------------------------------------------------------
+
+MAX_BYTES = 20 * 1024 * 1024
+FILE_TYPES = {
+    ".pdf": "application/pdf",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+ALLOWED = {"report": {".pdf"}, "ppt": {".pptx", ".pdf"}}
+KIND_NAME = {"report": "report", "ppt": "presentation"}
+
+
+def check_file(kind: str, name: str, data: bytes) -> tuple[str, str]:
+    """The clean file name and the path it will have in storage. The user's file name
+    never becomes part of the path."""
+    name = PurePath(name.replace("\\", "/")).name.strip()[:200]
+    ext = PurePath(name).suffix.lower()
+    if ext not in ALLOWED[kind]:
+        raise HTTPException(422, f"The {KIND_NAME[kind]} has to be a {' or '.join(sorted(ALLOWED[kind]))} file.")
+    if not data:
+        raise HTTPException(422, f"The {KIND_NAME[kind]} file is empty.")
+    if len(data) > MAX_BYTES:
+        raise HTTPException(413, "Files can be at most 20 MB.")
+    if ext == ".pdf" and not data.startswith(b"%PDF-"):
+        raise HTTPException(422, f"The {KIND_NAME[kind]} isn't a PDF file.")
+    return name, f"{secrets.token_hex(8)}{ext}"
+
+
+def _store_file(project_id: int, kind: str, name: str, data: bytes, account: db.Account) -> dict:
+    name, filename = check_file(kind, name, data)
+    path = f"{project_id}/{filename}"
+    with session.transaction(account) as conn:
+        can_change(conn, project_id, account)
+    storage.save(path, data, FILE_TYPES[PurePath(path).suffix])
+    try:
+        with session.transaction(account) as conn:
+            # One report and one presentation per project: a new one replaces the old.
+            old = conn.execute("SELECT file_id, storage_path FROM pbl.project_files WHERE project_id = %s AND kind = %s",
+                               (project_id, kind)).fetchone()
+            if old:
+                conn.execute(
+                    """UPDATE pbl.project_files SET file_name = %s, storage_path = %s, size_bytes = %s,
+                              uploaded_by = %s, uploaded_at = now()
+                       WHERE file_id = %s""",
+                    (name, path, len(data), account.user_id, old["file_id"]))
+                file_id = old["file_id"]
+            else:
+                file_id = conn.execute(
+                    """INSERT INTO pbl.project_files (project_id, kind, file_name, storage_path, size_bytes, uploaded_by)
+                       VALUES (%s, %s, %s, %s, %s, %s) RETURNING file_id""",
+                    (project_id, kind, name, path, len(data), account.user_id)).fetchone()["file_id"]
+    except Exception:
+        storage.delete(path)
+        raise
+    if old:
+        storage.delete(old["storage_path"])
+    return {"file_id": file_id}
+
+
+@router.post("/projects/{project_id}/files")
+async def upload_file(project_id: int, request: Request, kind: Literal["report", "ppt"],
+                      name: str = Query(min_length=1, max_length=200),
+                      account: db.Account = session.anyone) -> dict:
+    """The file is the request body itself, with its name and kind in the query."""
+    if int(request.headers.get("content-length") or 0) > MAX_BYTES:
+        raise HTTPException(413, "Files can be at most 20 MB.")
+    data = await request.body()
+    return await run_in_threadpool(_store_file, project_id, kind, name, data, account)
+
+
+@router.get("/files/{file_id}")
+def download_file(file_id: int, inline: bool = False, account: db.Account = session.anyone) -> Response:
+    with session.transaction(account) as conn:
+        row = conn.execute("SELECT project_id, file_name, storage_path FROM pbl.project_files WHERE file_id = %s",
+                           (file_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such file.")
+        access(conn, row["project_id"], account)
+    ext = PurePath(row["storage_path"]).suffix
+    # Only PDFs open inside the page (the report viewer); everything else downloads.
+    disposition = "inline" if inline and ext == ".pdf" else "attachment"
+    return Response(storage.load(row["storage_path"]), media_type=FILE_TYPES.get(ext, "application/octet-stream"),
+                    headers={"Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(row['file_name'])}"})
+
+
+@router.delete("/files/{file_id}")
+def remove_file(file_id: int, account: db.Account = session.anyone) -> dict:
+    with session.transaction(account) as conn:
+        row = conn.execute("SELECT project_id, storage_path FROM pbl.project_files WHERE file_id = %s",
+                           (file_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "No such file.")
+        can_change(conn, row["project_id"], account)
+        conn.execute("DELETE FROM pbl.project_files WHERE file_id = %s", (file_id,))   # a report is refused (trigger)
+    storage.delete(row["storage_path"])
+    return {}
+
+
+# Links ----------------------------------------------------------------------------------
 
 class LinkBody(BaseModel):
     label: str = Field(min_length=1, max_length=40)
@@ -218,40 +367,6 @@ def check_url(url: str) -> str:
         raise HTTPException(422, "A link has to start with https:// or http://.")
     return url
 
-
-class ProposalBody(IdeaBody):
-    subject_id: int
-    faculty_id: int
-    project_type: Literal["software", "hardware", "both"]
-    teammates: list[str] = Field([], max_length=12)
-    tags: list[str] = Field([], max_length=12)
-    links: list[LinkBody] = Field([], max_length=6)
-
-
-@router.post("/proposals")
-def submit_proposal(body: ProposalBody, account: db.Account = session.student) -> dict:
-    title, abstract = body.title.strip(), body.abstract.strip()
-    if len(title) < 5:
-        raise HTTPException(422, "Give the project a title of at least five characters.")
-    if len(abstract) < 30:
-        raise HTTPException(422, "A proposal needs an abstract of at least 30 characters.")
-    mates = [p for p in dict.fromkeys(m.strip() for m in body.teammates) if p and p != account.prn]
-    if not all(re.fullmatch(r"[0-9]{10}", p) for p in mates):
-        raise HTTPException(422, "Enter each teammate's 10-digit PRN, separated by commas.")
-    tags = [t.strip()[:60] for t in body.tags if t.strip()]
-    links = [(link.label.strip(), check_url(link.url)) for link in body.links]
-    vector = embed_text(project_text(title, abstract))
-    with session.transaction(account) as conn:
-        new_id = conn.execute(
-            "SELECT pbl.submit_project(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) AS id",
-            (account.user_id, title, abstract, body.subject_id, body.faculty_id, mates, body.project_type,
-             tags, [label for label, _ in links], [url for _, url in links], vector),
-        ).fetchone()["id"]
-        faculty = conn.execute("SELECT name FROM pbl.users WHERE user_id = %s", (body.faculty_id,)).fetchone()
-    return {"id": new_id, "faculty": faculty["name"]}
-
-
-# Links and files ------------------------------------------------------------------
 
 @router.post("/projects/{project_id}/links")
 def add_link(project_id: int, body: LinkBody, account: db.Account = session.anyone) -> dict:
@@ -275,76 +390,71 @@ def remove_link(link_id: int, account: db.Account = session.anyone) -> dict:
     return {}
 
 
-MAX_BYTES = 20 * 1024 * 1024
-FILE_TYPES = {
-    ".pdf": "application/pdf",
-    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-}
-ALLOWED = {"report": {".pdf", ".docx"}, "ppt": {".pptx", ".pdf"}}
+# Submitting a project -------------------------------------------------------------------
 
+def _submit(account: db.Account, title: str, abstract: str, subject_id: int, faculty_id: int, project_type: str,
+            teammates: str, tags: list[str], github: str, demo: str,
+            report: tuple[str, bytes], ppt: tuple[str, bytes] | None) -> dict:
+    title, abstract = title.strip(), abstract.strip()
+    if len(title) < 5:
+        raise HTTPException(422, "Give the project a title of at least five characters.")
+    if len(abstract) < 30:
+        raise HTTPException(422, "The abstract needs at least 30 characters.")
+    mates = [p for p in dict.fromkeys(re.split(r"[,\s]+", teammates)) if p and p != account.prn]
+    if len(mates) > 12 or not all(re.fullmatch(r"[0-9]{10}", p) for p in mates):
+        raise HTTPException(422, "Enter each teammate's 10-digit PRN, separated by commas.")
+    tags = list(dict.fromkeys(t.strip()[:60] for t in tags if t.strip()))[:12]
+    links = [(label, check_url(url)) for label, url in (("GitHub", github), ("Working demo", demo)) if url.strip()]
+    report_name, report_file = check_file("report", *report)
+    ppt_name, ppt_file = check_file("ppt", *ppt) if ppt else (None, None)
 
-def _store_file(project_id: int, kind: str, name: str, data: bytes, account: db.Account) -> dict:
-    ext = PurePath(name).suffix.lower()
-    path = f"{project_id}/{secrets.token_hex(8)}{ext}"   # the user's file name never becomes a path
-    with session.transaction(account) as conn:
-        can_change(conn, project_id, account)
-    storage.save(path, data, FILE_TYPES[ext])
+    vector = embed_text(project_text(title, abstract))
+    # The files go to storage first, under a folder for the submitting student; the
+    # database row that points to them is written by submit_project() in one go.
+    folder = f"new/{account.user_id}"
+    stored = [(f"{folder}/{report_file}", report[1])] + ([(f"{folder}/{ppt_file}", ppt[1])] if ppt else [])
+    for path, data in stored:
+        storage.save(path, data, FILE_TYPES[PurePath(path).suffix])
     try:
         with session.transaction(account) as conn:
-            file_id = conn.execute(
-                """INSERT INTO pbl.project_files (project_id, kind, file_name, storage_path, size_bytes, uploaded_by)
-                   VALUES (%s, %s, %s, %s, %s, %s) RETURNING file_id""",
-                (project_id, kind, name, path, len(data), account.user_id)).fetchone()["file_id"]
+            new_id = conn.execute(
+                """SELECT pbl.submit_project(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                                             %s, %s, %s, %s, %s, %s) AS id""",
+                (account.user_id, title, abstract, subject_id, faculty_id, mates, project_type, tags,
+                 [label for label, _ in links], [url for _, url in links], vector,
+                 report_name, stored[0][0], len(report[1]),
+                 ppt_name, stored[1][0] if ppt else None, len(ppt[1]) if ppt else None),
+            ).fetchone()["id"]
+            faculty = conn.execute("SELECT name FROM pbl.users WHERE user_id = %s", (faculty_id,)).fetchone()
     except Exception:
-        storage.delete(path)
+        for path, _ in stored:
+            storage.delete(path)
         raise
-    return {"file_id": file_id}
+    return {"id": new_id, "faculty": faculty["name"]}
 
 
-@router.post("/projects/{project_id}/files")
-async def upload_file(project_id: int, request: Request, kind: Literal["report", "ppt"],
-                      name: str = Query(min_length=1, max_length=200),
-                      account: db.Account = session.anyone) -> dict:
-    """The file is the request body itself, with its name and kind in the query."""
-    name = PurePath(name.replace("\\", "/")).name.strip()
-    ext = PurePath(name).suffix.lower()
-    if ext not in ALLOWED[kind]:
-        allowed = " or ".join(sorted(ALLOWED[kind]))
-        raise HTTPException(422, f"A {'report' if kind == 'report' else 'presentation'} has to be a {allowed} file.")
-    if int(request.headers.get("content-length") or 0) > MAX_BYTES:
-        raise HTTPException(413, "Files can be at most 20 MB.")
-    data = await request.body()
-    if not data:
-        raise HTTPException(422, "The file is empty.")
-    if len(data) > MAX_BYTES:
-        raise HTTPException(413, "Files can be at most 20 MB.")
-    return await run_in_threadpool(_store_file, project_id, kind, name, data, account)
-
-
-@router.get("/files/{file_id}")
-def download_file(file_id: int, account: db.Account = session.anyone) -> Response:
-    with session.transaction(account) as conn:
-        row = conn.execute("SELECT file_name, storage_path FROM pbl.project_files WHERE file_id = %s",
-                           (file_id,)).fetchone()
-    if row is None:
-        raise HTTPException(404, "No such file.")
-    ext = PurePath(row["storage_path"]).suffix
-    return Response(storage.load(row["storage_path"]), media_type=FILE_TYPES.get(ext, "application/octet-stream"),
-                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(row['file_name'])}"})
-
-
-@router.delete("/files/{file_id}")
-def remove_file(file_id: int, account: db.Account = session.anyone) -> dict:
-    with session.transaction(account) as conn:
-        row = conn.execute("SELECT project_id, storage_path FROM pbl.project_files WHERE file_id = %s",
-                           (file_id,)).fetchone()
-        if row is None:
-            raise HTTPException(404, "No such file.")
-        can_change(conn, row["project_id"], account)
-        conn.execute("DELETE FROM pbl.project_files WHERE file_id = %s", (file_id,))
-    storage.delete(row["storage_path"])
-    return {}
+@router.post("/submissions")
+async def submit_project(title: str = Form(max_length=200),
+                         abstract: str = Form(max_length=3000),
+                         subject_id: int = Form(),
+                         faculty_id: int = Form(),
+                         project_type: Literal["software", "hardware", "both"] = Form(),
+                         teammates: str = Form("", max_length=300),
+                         tags: list[str] = Form([]),
+                         github: str = Form("", max_length=300),
+                         demo: str = Form("", max_length=300),
+                         report: UploadFile = File(),
+                         ppt: UploadFile | None = File(None),
+                         account: db.Account = session.student) -> dict:
+    files = {}
+    for kind, upload in (("report", report), ("ppt", ppt)):
+        if upload is not None and upload.filename:
+            data = await upload.read(MAX_BYTES + 1)
+            files[kind] = (upload.filename, data)
+    if "report" not in files:
+        raise HTTPException(422, "Attach the project report (PDF).")
+    return await run_in_threadpool(_submit, account, title, abstract, subject_id, faculty_id, project_type,
+                                   teammates, tags, github, demo, files["report"], files.get("ppt"))
 
 
 # Trends -------------------------------------------------------------------------
@@ -354,13 +464,13 @@ def trends(account: db.Account = session.anyone) -> dict:
     with session.transaction(account) as conn:
         year = conn.execute("SELECT pbl.current_academic_year() AS y").fetchone()["y"]
         totals = conn.execute(
-            """SELECT count(*) FILTER (WHERE status <> 'rejected') AS projects,
-                      count(DISTINCT academic_year)               AS years,
-                      count(*) FILTER (WHERE status = 'proposed') AS waiting
+            """SELECT count(*) FILTER (WHERE status = 'approved')  AS projects,
+                      count(DISTINCT academic_year)                AS years,
+                      count(*) FILTER (WHERE status = 'submitted') AS waiting
                FROM pbl.projects""").fetchone()
         types = conn.execute(
             """SELECT project_type, count(*) AS projects FROM pbl.projects
-               WHERE status <> 'rejected' GROUP BY project_type ORDER BY projects DESC""").fetchall()
+               WHERE status = 'approved' GROUP BY project_type ORDER BY projects DESC""").fetchall()
         pairs = conn.execute(
             """SELECT first_title, first_year, second_title, second_year, similarity, band
                FROM pbl.repeated_ideas ORDER BY similarity DESC""").fetchall()
@@ -372,7 +482,7 @@ def trends(account: db.Account = session.anyone) -> dict:
         load = conn.execute(
             """SELECT u.name AS faculty,
                       count(*) AS projects,
-                      count(*) FILTER (WHERE p.status = 'proposed') AS waiting
+                      count(*) FILTER (WHERE p.status = 'submitted') AS waiting
                FROM pbl.projects p JOIN pbl.users u ON u.user_id = p.faculty_id
                WHERE p.academic_year = %s AND p.status <> 'rejected'
                GROUP BY u.name ORDER BY projects DESC, u.name""", (year,)).fetchall()

@@ -15,14 +15,14 @@ router = APIRouter(prefix="/api")
 DEMO_ON = optional("DEMO_SWITCHER").lower() in {"1", "true", "on", "yes"}
 DEMO_ACCOUNTS = [
     {"login": "1032240101", "name": "Rohan Deogaonkar", "role": "student",
-     "shows": "CCTV attendance proposal flagged as a near duplicate, and the Smart Water Tank project"},
+     "shows": "CCTV attendance project waiting for review, and the Smart Water Tank project"},
     {"login": "1032240102", "name": "Akash Mane", "role": "student",
-     "shows": "No project this year: check an idea and submit it"},
-    {"login": "srao@example.edu", "name": "Prof. S. Rao", "role": "faculty",
-     "shows": "Faculty for Rohan's CCTV attendance proposal"},
-    {"login": "riyer@example.edu", "name": "Prof. R. Iyer", "role": "faculty",
-     "shows": "Faculty for Rohan's Smart Water Tank project, which still needs marks"},
-    {"login": "nshaikh@example.edu", "name": "Dr. N. Shaikh", "role": "admin",
+     "shows": "No project this year yet: submit one"},
+    {"login": "srao@mitwpu.edu.in", "name": "Prof. S. Rao", "role": "faculty",
+     "shows": "Reviews Rohan's CCTV attendance project"},
+    {"login": "riyer@mitwpu.edu.in", "name": "Prof. R. Iyer", "role": "faculty",
+     "shows": "Rohan's Smart Water Tank project, approved and not graded yet"},
+    {"login": "nshaikh@mitwpu.edu.in", "name": "Dr. N. Shaikh", "role": "admin",
      "shows": "PBL coordinator: people, subjects, whole department"},
 ]
 

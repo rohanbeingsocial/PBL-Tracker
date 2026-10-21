@@ -1,4 +1,4 @@
-"""Faculty and admin pages: review proposals, marks, people, subjects.
+"""Faculty and admin pages: review submissions and give marks, people, subjects.
 
 A faculty member can only decide on and mark the projects assigned to them; every
 UPDATE below has faculty_id = the signed-in user in its WHERE clause. The marks
@@ -16,57 +16,47 @@ from finder.embeddings import embed, project_text
 router = APIRouter(prefix="/api")
 
 
-# Review proposals -----------------------------------------------------------------
+# Review submissions and give marks ---------------------------------------------------
 
 @router.get("/review")
 def review(account: db.Account = session.faculty) -> dict:
     with session.transaction(account) as conn:
         waiting = conn.execute(
-            """SELECT c.*, q.created_at AS sent_at, q.closest_title, q.closest_year, q.similarity, q.band,
-                      cl.abstract AS closest_abstract
+            """SELECT c.project_id, c.title, c.subject, c.members, c.created_at,
+                      q.closest_title, q.closest_year, q.similarity, q.band
                FROM pbl.review_queue q
                JOIN pbl.project_cards c ON c.project_id = q.project_id
-               LEFT JOIN pbl.projects cl ON cl.project_id = q.closest_id
                WHERE q.faculty_id = %s
                ORDER BY q.created_at""", (account.user_id,)).fetchall()
-        running = conn.execute(
-            """SELECT * FROM pbl.project_cards
-               WHERE faculty_id = %s AND status = 'approved'
-               ORDER BY academic_year, title""", (account.user_id,)).fetchall()
-    return {"waiting": waiting, "running": running}
-
-
-class DecisionBody(BaseModel):
-    status: Literal["approved", "rejected", "completed"]
-    note: str = Field("", max_length=1000)
-
-
-@router.post("/projects/{project_id}/decision")
-def decide(project_id: int, body: DecisionBody, account: db.Account = session.faculty) -> dict:
-    with session.transaction(account) as conn:
-        changed = conn.execute(
-            """UPDATE pbl.projects SET status = %s, review_note = nullif(btrim(%s), '')
-               WHERE project_id = %s AND faculty_id = %s AND status IN ('proposed', 'approved')""",
-            (body.status, body.note, project_id, account.user_id)).rowcount
-    if changed == 0:
-        raise HTTPException(409, "Nothing changed. It isn't one of your projects, or it was decided already.")
-    return {"status": body.status}
-
-
-# Marks ------------------------------------------------------------------------------
-
-@router.get("/marks")
-def marks_projects(account: db.Account = session.faculty) -> dict:
-    with session.transaction(account) as conn:
-        projects = conn.execute(
-            """SELECT c.project_id, c.title, c.academic_year, c.subject, c.subject_name, c.status, c.members,
+        decided = conn.execute(
+            """SELECT c.project_id, c.title, c.subject, c.academic_year, c.members, c.status, c.decided_at,
                       p.marks::float8, s.max_marks::float8
                FROM pbl.project_cards c
                JOIN pbl.projects p ON p.project_id = c.project_id
                JOIN pbl.subjects s ON s.subject_id = p.subject_id
-               WHERE c.faculty_id = %s AND c.status IN ('approved', 'completed')
-               ORDER BY c.academic_year DESC, c.title""", (account.user_id,)).fetchall()
-    return {"projects": projects}
+               WHERE c.faculty_id = %s AND c.status <> 'submitted'
+               ORDER BY c.status, p.marks IS NOT NULL, c.academic_year DESC, c.title""",
+            (account.user_id,)).fetchall()
+    return {"waiting": waiting, "decided": decided}
+
+
+class DecisionBody(BaseModel):
+    status: Literal["approved", "rejected"]
+    note: str = Field("", max_length=1000)
+    marks: float | None = Field(None, ge=0)      # can be given with the approval, or later
+
+
+@router.post("/projects/{project_id}/decision")
+def decide(project_id: int, body: DecisionBody, account: db.Account = session.faculty) -> dict:
+    marks = body.marks if body.status == "approved" else None
+    with session.transaction(account) as conn:
+        changed = conn.execute(
+            """UPDATE pbl.projects SET status = %s, review_note = nullif(btrim(%s), ''), marks = %s
+               WHERE project_id = %s AND faculty_id = %s AND status = 'submitted'""",
+            (body.status, body.note, marks, project_id, account.user_id)).rowcount
+    if changed == 0:
+        raise HTTPException(409, "Nothing changed. It isn't one of your projects, or it was decided already.")
+    return {"status": body.status}
 
 
 class MarksBody(BaseModel):
@@ -129,6 +119,8 @@ class NewPerson(BaseModel):
 
 @router.post("/people")
 def add_person(body: NewPerson, account: db.Account = session.admin) -> dict:
+    if not body.email.strip().lower().endswith("@mitwpu.edu.in"):
+        raise HTTPException(422, "Use the person's college email, ending in @mitwpu.edu.in.")
     with session.transaction(account) as conn:
         temporary = conn.execute(
             "SELECT pbl.create_user(%s, %s, %s, %s, %s) AS temporary",
