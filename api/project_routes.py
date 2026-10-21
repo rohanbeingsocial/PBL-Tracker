@@ -82,7 +82,17 @@ def student_home(conn, account: db.Account) -> dict:
            JOIN pbl.subjects s      ON s.subject_id = p.subject_id
            WHERE pm.user_id = %s
            ORDER BY c.academic_year DESC, c.created_at DESC""", (account.user_id,)).fetchall()
-    return {"projects": mine}
+    # The stacks approved projects used in the last two years, for the "what's popular" chart.
+    popular = conn.execute(
+        """SELECT tag, sum(project_count)::int AS projects FROM pbl.tag_trends
+           WHERE academic_year IN (SELECT DISTINCT academic_year FROM pbl.tag_trends
+                                   ORDER BY academic_year DESC LIMIT 2)
+           GROUP BY tag ORDER BY projects DESC, tag LIMIT 6""").fetchall()
+    approved = conn.execute(
+        """SELECT project_id, title, subject, academic_year, faculty, members, decided_at
+           FROM pbl.project_cards WHERE status = 'approved'
+           ORDER BY decided_at DESC, project_id DESC LIMIT 5""").fetchall()
+    return {"projects": mine, "popular": popular, "approved": approved}
 
 
 def faculty_home(conn, account: db.Account) -> dict:
@@ -92,6 +102,7 @@ def faculty_home(conn, account: db.Account) -> dict:
         (account.user_id,)).fetchall()
     counts = conn.execute(
         """SELECT count(*) FILTER (WHERE status = 'approved') AS approved,
+                  count(*) FILTER (WHERE status = 'rejected') AS rejected,
                   count(*) FILTER (WHERE status = 'approved' AND marks IS NOT NULL) AS graded
            FROM pbl.projects WHERE faculty_id = %s""", (account.user_id,)).fetchone()
     to_grade = conn.execute(
@@ -99,7 +110,19 @@ def faculty_home(conn, account: db.Account) -> dict:
            FROM pbl.projects p JOIN pbl.subjects s ON s.subject_id = p.subject_id
            WHERE p.faculty_id = %s AND p.status = 'approved' AND p.marks IS NULL
            ORDER BY p.academic_year DESC, p.title""", (account.user_id,)).fetchall()
-    return {"waiting": waiting, **counts, "to_grade": to_grade}
+    by_subject = conn.execute(
+        """SELECT s.code AS subject,
+                  count(*) FILTER (WHERE p.status = 'approved')  AS approved,
+                  count(*) FILTER (WHERE p.status = 'submitted') AS waiting,
+                  round(avg(100 * p.marks / s.max_marks))::int   AS average_percent
+           FROM pbl.projects p JOIN pbl.subjects s ON s.subject_id = p.subject_id
+           WHERE p.faculty_id = %s
+           GROUP BY s.code ORDER BY s.code""", (account.user_id,)).fetchall()
+    percents = [r["percent"] for r in conn.execute(
+        """SELECT (100 * p.marks / s.max_marks)::float8 AS percent
+           FROM pbl.projects p JOIN pbl.subjects s ON s.subject_id = p.subject_id
+           WHERE p.faculty_id = %s AND p.marks IS NOT NULL""", (account.user_id,))]
+    return {"waiting": waiting, **counts, "to_grade": to_grade, "by_subject": by_subject, "percents": percents}
 
 
 def admin_home(conn, account: db.Account) -> dict:
@@ -115,12 +138,25 @@ def admin_home(conn, account: db.Account) -> dict:
     per_year = conn.execute(
         """SELECT academic_year,
                   count(*) FILTER (WHERE status = 'approved')  AS approved,
-                  count(*) FILTER (WHERE status = 'submitted') AS submitted
+                  count(*) FILTER (WHERE status = 'submitted') AS submitted,
+                  count(*) FILTER (WHERE status = 'rejected')  AS rejected
            FROM pbl.projects GROUP BY academic_year ORDER BY academic_year""").fetchall()
+    by_subject = conn.execute(
+        """SELECT s.code AS subject, count(p.project_id) AS projects
+           FROM pbl.subjects s LEFT JOIN pbl.projects p ON p.subject_id = s.subject_id AND p.status <> 'rejected'
+           GROUP BY s.code ORDER BY projects DESC, s.code""").fetchall()
+    load = conn.execute(
+        """SELECT u.name AS faculty,
+                  count(*) FILTER (WHERE p.status = 'submitted') AS waiting,
+                  count(*) FILTER (WHERE p.status = 'approved')  AS approved
+           FROM pbl.projects p JOIN pbl.users u ON u.user_id = p.faculty_id
+           WHERE p.academic_year = pbl.current_academic_year()
+           GROUP BY u.name ORDER BY waiting DESC, approved DESC, u.name""").fetchall()
     recent = conn.execute(
         """SELECT project_id, title, subject, faculty, status, created_at
            FROM pbl.project_cards ORDER BY created_at DESC, project_id DESC LIMIT 6""").fetchall()
-    return {**projects, **users, "per_year": per_year, "recent": recent}
+    return {**projects, **users, "rejected": sum(y["rejected"] for y in per_year), "per_year": per_year,
+            "by_subject": by_subject, "load": load, "recent": recent}
 
 
 @router.get("/home")

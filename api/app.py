@@ -57,9 +57,10 @@ async def security_headers(request: Request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "same-origin"
     if response.headers.get("content-disposition", "").startswith("inline"):
-        # A report opened inside the project page: only our own pages may frame it.
-        # The browser's PDF viewer needs no other rules.
-        response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
+        # A report opened in its own tab ("Open" on the project page). The project page
+        # itself draws the PDF with PDF.js, so nothing needs to frame it, and the
+        # browser's PDF viewer needs no other rules.
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
     else:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
