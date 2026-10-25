@@ -58,7 +58,9 @@ export default function OpenLink({ code }: { code: string }) {
     top = (
       <Notice tone="up">
         Your team has submitted <AppLink to={`/projects/${mine.project_id}`}>{mine.title}</AppLink> here.{" "}
-        {mine.status === "submitted" ? `${link.faculty} hasn't reviewed it yet.` : "It has been approved."}
+        {mine.status === "submitted" ? `${link.faculty} hasn't reviewed it yet.` : "It has been approved."}{" "}
+        A student has one project in each submission link, so there is no form to fill in; your team can submit
+        again only if this one is rejected. Its links and files can still be changed on the project page.
       </Notice>
     );
   } else if (!link.is_open) {
