@@ -61,7 +61,7 @@ export default function Subjects() {
   const { data, error, loading, reload } = useLoad<{ subjects: SubjectRow[] }>("/subjects");
   const [editing, setEditing] = useState<number | null>(null);
   const head = <PageHead title="Subjects"
-                         sub="Each subject marks its projects out of its own total, for example 33 for a lab or 5 for a theory subject." />;
+                         sub="Each subject has its usual total, for example 33 for a lab or 5 for a theory subject. A new submission link starts with it, and its faculty member can change it." />;
   if (loading && !data) return <>{head}<Loading /></>;
   if (error || !data) return <>{head}<Failed message={error ?? ""} retry={reload} /></>;
 

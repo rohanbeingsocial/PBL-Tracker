@@ -1,11 +1,14 @@
 # PBL Tracker
 
-One place for every PBL project at MIT-WPU: who was in the team, which subject it was
-for, which faculty member approved it, what it was built with, its report, presentation
-and links, and the marks it got. A team submits its finished project with the report to
-the faculty member of its choice, who reviews it and gives the marks. While a team fills
-in the form, the closest past projects are shown **by meaning**, not just by matching
-words, so repeated ideas get noticed.
+One place for every PBL project at MIT-WPU: who was in the team, which subject and class
+it was for, which faculty member approved it, what it was built with, its report,
+presentation and links, and the marks each student got. A faculty member makes a
+submission link for each class (subject, class, what the submission is for) and sends it
+to the students. Every project submitted through that link counts towards that class's
+submission; the faculty member approves or rejects each one, gives every student their
+own marks, and downloads the class's marks as a spreadsheet. While a team fills in the
+form, the closest past projects are shown **by meaning**, not just by matching words, so
+repeated ideas get noticed.
 
 DBMS PBL, 2026-27. PostgreSQL 17 with pgvector (hosted on Supabase), files in a
 Backblaze B2 bucket, a FastAPI server with a React front end, psycopg 3, and the
@@ -41,12 +44,13 @@ across different years.
 
 | Page | Who | What |
 |---|---|---|
-| Dashboard | everyone | Students: where each of their projects is (submitted, approved, graded), marks, status chart, popular stacks, recently approved projects. Faculty: submissions waiting for review with how close each is to a past project, projects by subject, spread of marks given, projects not graded yet. Admin: totals, projects per year by status, projects per subject, what each faculty member still has to review, latest submissions |
+| Dashboard | everyone | Students: where each of their projects is (submitted, approved, graded), their own marks, status chart, popular stacks, recently approved projects. Faculty: submissions waiting for review with how close each is to a past project, open submission links, projects by subject, spread of team scores, projects not graded yet. Admin: totals, projects per year by status, projects per subject, what each faculty member still has to review, latest submissions |
 | Search projects | everyone | Every approved project from every year, by name or by idea (keyword, meaning, or both merged with Reciprocal Rank Fusion), with subject, technology, type and year filters |
 | Project | everyone | The report opens on the left; on the right the team, subject, year, the faculty member who approved it, the dates, technologies, links, presentation and abstract |
-| Submit a project | students | Title, abstract, subject, the faculty member it goes to, teammates, technologies, the report (PDF, required), and optionally the presentation, a GitHub link and a working demo link. The closest past projects show up next to the form |
+| Submission link (`/s/<code>`) | everyone | What the link is for (subject, class, faculty member, purpose), the class's approved projects, and, for a student whose team has no project here yet, the submit form: title, abstract, teammates, technologies, the report (PDF, required), and optionally the presentation, a GitHub link and a working demo link. The closest past projects show up next to the form |
 | Trends | everyone | Most used technologies per year, software vs. hardware, ideas that keep coming back, faculty load |
-| Review and marks | faculty | Submissions waiting for review; on the project page, approve or reject and give marks |
+| Submission links | faculty | Make a link (subject, class, what it is for, what each student is marked out of), copy it to send to the class, close it when the deadline passes. Each link's page lists every project that came in with each student's marks, and downloads them as a CSV file |
+| Project, for its faculty member | faculty | Approve or reject with a note, then give each student their marks |
 | People | admin | Add students and faculty, give someone a temporary password, switch an account off, make a faculty member an admin |
 | Subjects | admin | Add subjects and set what each one is marked out of |
 | Your account | everyone | Change your password |
@@ -56,9 +60,12 @@ nothing opens without signing in. Students sign in with their PRN or college ema
 faculty with their email. Passwords are checked inside PostgreSQL (bcrypt through
 pgcrypto). Light and dark themes are in the sidebar.
 
-Marks are seen by the team, its faculty member and the PBL coordinator. The team can
-switch on "Show our marks to everyone" on its project page. A project still waiting for
-review, or rejected, is seen only by its team, its faculty member and the coordinator.
+Each student sees their own marks and the team score, which is the average of the team's
+marks once every member has been graded. The faculty member who made the link and the
+PBL coordinator see everyone's marks. The team can switch on "Show our team score to
+everyone" on its project page; a student's own marks are never shown to the rest of the
+class. A project still waiting for review, or rejected, is seen only by its team, its
+faculty member and the coordinator. Approved projects are open to the whole site.
 
 The team and its faculty member can replace the report, add, replace or remove the
 presentation (PowerPoint or PDF), and add or remove links, up to 20 MB per file.
@@ -69,14 +76,15 @@ calls it; `python -m api` serves both from one address once the front end is bui
 
 ## Database design
 
-8 tables in 3NF, 4 views, 5 triggers, 17 functions (5 of them trigger functions).
+9 tables in 3NF, 6 views, 6 triggers, 18 functions (6 of them trigger functions).
 Design notes, the normalisation walk-through and index choices are in
 [docs/design.md](docs/design.md).
 
 ```mermaid
 erDiagram
-    USERS    ||--o{ PROJECTS : "guides (faculty_id)"
-    SUBJECTS ||--o{ PROJECTS : contains
+    USERS    ||--o{ SUBMISSION_LINKS : "makes (faculty_id)"
+    SUBJECTS ||--o{ SUBMISSION_LINKS : "is for"
+    SUBMISSION_LINKS ||--o{ PROJECTS : collects
     PROJECTS ||--o{ PROJECT_MEMBERS : has
     USERS    ||--o{ PROJECT_MEMBERS : "works in"
     PROJECTS ||--o{ PROJECT_TAGS : "tagged with"
@@ -101,17 +109,25 @@ erDiagram
         varchar name
         numeric max_marks
     }
+    SUBMISSION_LINKS {
+        int submission_link_id PK
+        varchar code UK "random, the /s/ URL"
+        int faculty_id FK
+        int subject_id FK
+        varchar academic_year
+        varchar class_name
+        varchar purpose
+        numeric max_marks
+        boolean is_open
+    }
     PROJECTS {
         int project_id PK
+        int submission_link_id FK
         varchar title
         text abstract
-        int subject_id FK
-        int faculty_id FK
-        varchar academic_year
         varchar project_type "software, hardware, both"
         varchar status "submitted, approved, rejected"
         timestamptz decided_at
-        numeric marks
         boolean marks_public
         tsvector search_text "generated"
         vector embedding "384 numbers"
@@ -120,6 +136,7 @@ erDiagram
         int project_id PK, FK
         int user_id PK, FK
         boolean is_leader
+        numeric marks
     }
     TAGS {
         int tag_id PK
@@ -147,28 +164,36 @@ erDiagram
 ```
 
 Students and faculty share one `users` table with a `role` column, so a project's team
-(`project_members.user_id`) and its faculty member (`projects.faculty_id`) both point at
-`users`. Tags cover the stack and anything else worth filtering on (ESP32, Flask,
-OpenCV); whether a project is software, hardware or both is its own column, and the year
-is `academic_year`. The files themselves live in a Backblaze B2 bucket;
-`project_files` keeps the name, size, who uploaded it and where it is stored.
+(`project_members.user_id`) and the faculty member who made its link
+(`submission_links.faculty_id`) both point at `users`. A project's subject, faculty member
+and year are its link's, so `projects` only keeps `submission_link_id`. Marks belong to a
+student in a team, so they sit on `project_members`; the team score is worked out by the
+`team_marks` view, never stored. Tags cover the stack and anything else worth filtering on
+(ESP32, Flask, OpenCV); whether a project is software, hardware or both is its own column.
+The files themselves live in a Backblaze B2 bucket; `project_files` keeps the name, size,
+who uploaded it and where it is stored.
 
 ### Rules the database enforces
 
 | Rule | How |
 |---|---|
 | Teams can be any size, and a student can be in any number of projects in a year | Nothing limits them, on purpose |
+| A student has one live project per submission link (a rejected one doesn't count, so the team can try again) | `check_member` trigger, with an advisory lock so two submits at once can't both get in |
 | Only students can be team members | `check_member` trigger |
 | One leader per team | Partial unique index |
-| The assigned faculty member has to be a faculty user | `check_project` trigger |
-| Marks can't be negative or more than the subject's maximum (33 for a lab, 5 for a theory mini project, whatever the admin sets) | CHECK + `check_project` trigger |
-| Only approved projects can be marked | `check_project` trigger |
+| A submission link belongs to a faculty user | `check_submission_link` trigger |
+| A link's code is random and comes from the database, never from the app | `gen_random_bytes()` default, and `pbl_app` has no rights on the column |
+| A closed link takes no new projects | `submit_project()` |
+| Each student's marks can't be negative or more than the link's maximum, which starts as the subject's (33 for a lab, 5 for a theory mini project) | CHECK + `check_member` trigger |
+| A link's maximum can't go below marks already given | `check_submission_link` trigger |
+| Only approved projects can be marked | `check_member` trigger |
+| The team score is the average of its members' marks, shown only once all of them have marks | `team_marks` view |
 | Status is submitted, then approved or rejected once; the trigger records the date | CHECK + `check_project` trigger, and a CHECK that `decided_at` is set exactly when it was decided |
 | Every account has an `@mitwpu.edu.in` email | `college_email` CHECK |
 | A project is submitted with its report; one report (a PDF) and at most one presentation per project; the report can be replaced but not removed | `submit_project()`, unique `(project_id, kind)`, `reports_are_pdf` CHECK, `keep_report` trigger |
 | Approving a near duplicate (similarity 0.70 or more) needs a review note | `check_near_duplicate` trigger, using pgvector |
-| Academic year looks like `2026-27`, and 27 follows 26 | Two named CHECK constraints (regex, then arithmetic) |
-| The same title can't be submitted twice for one subject and year | Unique index on `lower(title)` |
+| A link's academic year looks like `2026-27`, and 27 follows 26 | Two named CHECK constraints (regex, then arithmetic) |
+| The same title can't be submitted twice through one link | Unique index on `(submission_link_id, lower(title))` |
 | Links start with http:// or https://, once per project | CHECK + unique constraint |
 | Files are up to 20 MB | CHECK on `size_bytes` |
 | Tag names are unique ignoring case | Unique index on `lower(name)` |
@@ -180,7 +205,8 @@ is `academic_year`. The files themselves live in a Backblaze B2 bucket;
 ### PostgreSQL features used
 
 pgvector with an HNSW index for meaning search; full-text search on a generated
-`tsvector` column with a GIN index; pgcrypto for bcrypt password hashing; stored
+`tsvector` column with a GIN index; pgcrypto for bcrypt password hashing and random link
+codes; advisory locks; stored
 functions (`similar_projects`, `keyword_search`, `hybrid_search`, `submit_project`,
 `sign_in`); triggers in PL/pgSQL; a login role with column-level privileges; JSONB and
 arrays in the `project_cards` view; partial and expression indexes; `LATERAL` joins;
@@ -189,11 +215,13 @@ arrays in the `project_cards` view; partial and expression indexes; `LATERAL` jo
 ## Security
 
 The app connects as `pbl_app`, a login that can read what the pages show and change
-only what the app needs: a project's status, review note, marks and whether its marks
-are public, its links and files, subjects, and whether a user is switched on or an admin. It can't read password hashes,
+only what the app needs: a project's status, review note and whether its team score is
+public, each student's marks, its links and files, a submission link's class, purpose,
+maximum and whether it is open (never its code), subjects, and whether a user is
+switched on or an admin. It can't read password hashes,
 can't delete projects or users, and creates projects and users only through
 `submit_project()` and `create_user()`, which check everything first. Which signed-in
-person may do what (a student, the project's faculty member, an admin) is checked by the
+person may do what (a student, the faculty member who owns the link, an admin) is checked by the
 server before it runs anything. Details: [docs/security.md](docs/security.md).
 
 No credentials are in this repository. They live in `.env`, which git ignores.
@@ -271,9 +299,9 @@ Sign in with one of the sample users and the `SEED_PASSWORD` from your `.env`:
 | Role | Sign in as | Shows |
 |---|---|---|
 | Student | `1032240101` (Rohan Deogaonkar) | A submission very close to an earlier project, waiting for review, and an approved project |
-| Student | `1032240102` (Akash Mane) | No project this year, so the submit flow |
-| Faculty | `srao@mitwpu.edu.in` (Prof. S. Rao) | Rohan's submission, waiting for review |
-| Faculty | `riyer@mitwpu.edu.in` (Prof. R. Iyer) | Rohan's approved project, not graded yet |
+| Student | `1032240102` (Akash Mane) | No project this year: open a submission link to submit one |
+| Faculty | `srao@mitwpu.edu.in` (Prof. S. Rao) | The ML-PBL submission link for TY ECE Div B, with Rohan's submission waiting for review |
+| Faculty | `riyer@mitwpu.edu.in` (Prof. R. Iyer) | Rohan's approved project, students not graded yet |
 | Admin | `nshaikh@mitwpu.edu.in` (Dr. N. Shaikh, PBL coordinator) | Everything, plus People and Subjects |
 
 **Demo account switcher.** With `DEMO_SWITCHER=on` in `.env`, the sign-in page lists
@@ -293,9 +321,10 @@ takes milliseconds.
 pytest
 ```
 
-78 tests: the rules, what `pbl_app` may and may not do, sign-in and passwords (46
-database tests), and the web server's sessions, every page for every role, submitting
-with a report, who sees a project and its marks, links and files (32 API tests). The
+87 tests: the rules, what `pbl_app` may and may not do, sign-in and passwords (50
+database tests), and the web server's sessions, every page for every role, submission
+links, submitting with a report, approving and grading each student, the marks export,
+who sees a project and its marks, links and files (37 API tests). The
 database tests run inside a transaction that is rolled back, so the data is untouched;
 the API tests that add or change anything put it back. GitHub Actions runs the database tests every night at 11:30 pm IST
 against a fresh pgvector container.
@@ -306,8 +335,9 @@ against a fresh pgvector container.
 psql "<ADMIN_DATABASE_URL>" -f sql/demo.sql
 ```
 
-Twenty steps: each rule failing with its own error message, keyword vs. meaning
-search, the approval rule, `pbl_app`'s privileges, joins, views and the index plans. It
+Twenty-one steps: submission links, each rule failing with its own error message,
+each student's marks and the team score, keyword vs. meaning search, the approval rule,
+`pbl_app`'s privileges, joins, views and the index plans. It
 all runs in a transaction that is rolled back, so it can be repeated. Expected output is
 in [docs/demo-output.txt](docs/demo-output.txt); the order to show things in and likely
 viva questions are in [docs/viva.md](docs/viva.md).

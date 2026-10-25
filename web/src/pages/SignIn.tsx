@@ -47,7 +47,7 @@ export default function SignIn({ notice, demo, onSignedIn }: {
     <div className="signin">
       <div className="signin-box">
         <div className="row" style={{ justifyContent: "space-between" }}>
-          <div className="row" style={{ gap: 10 }}><div className="wordmark">PBL Tracker</div><span className="muted small">MIT-WPU</span></div>
+          <div className="wordmark">PBL Tracker</div>
           <ThemeSwitch />
         </div>
         <div>

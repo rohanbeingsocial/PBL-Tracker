@@ -56,12 +56,12 @@ function SimilarPast({ title, abstract }: { title: string; abstract: string }) {
   );
 }
 
-export default function Submit() {
+// The submit form of one submission link: the link fixes the subject, the faculty
+// member and the class, so the team only describes its project.
+export function SubmitForm({ code, faculty }: { code: string; faculty: string }) {
   const { me, ref, toast, go } = useApp();
   const [title, setTitle] = useState("");
   const [abstract, setAbstract] = useState("");
-  const [subject, setSubject] = useState(0);
-  const [faculty, setFaculty] = useState(0);
   const [type, setType] = useState<ProjectType>("software");
   const [mates, setMates] = useState("");
   const [tags, setTags] = useState<string[]>([]);
@@ -84,8 +84,6 @@ export default function Submit() {
   function problem(): string | null {
     if (title.trim().length < 5) return "Give the project a title of at least five characters.";
     if (abstract.trim().length < 30) return "The abstract needs at least 30 characters.";
-    if (!subject) return "Choose the subject it is for.";
-    if (!faculty) return "Choose the faculty member it goes to.";
     if (!mates.split(/[,\s]+/).filter(Boolean).every((m) => /^[0-9]{10}$/.test(m))) return "Enter each teammate's 10-digit PRN, separated by commas.";
     if (!report) return "Attach the project report (PDF).";
     if (!report.name.toLowerCase().endsWith(".pdf")) return "The report has to be a PDF.";
@@ -100,10 +98,9 @@ export default function Submit() {
     const wrong = problem();
     if (wrong) return setError(wrong);
     const form = new FormData();
+    form.append("code", code);
     form.append("title", title.trim());
     form.append("abstract", abstract.trim());
-    form.append("subject_id", String(subject));
-    form.append("faculty_id", String(faculty));
     form.append("project_type", type);
     form.append("teammates", mates);
     tags.forEach((t) => form.append("tags", t));
@@ -128,8 +125,9 @@ export default function Submit() {
   const req = <span className="required"> *</span>;
   return (
     <>
-      <PageHead title="Submit a project"
-                sub={`For ${ref.current_year}, with you (${me.name}) as team leader. The faculty member you choose reviews it and gives the marks.`} />
+      <p className="small muted" style={{ margin: "0 0 14px" }}>
+        You ({me.name}) are the team leader. {faculty} reviews it and gives each of you marks.
+      </p>
       <div className="split">
         <form className="wide card pad-lg stack" style={{ gap: 18 }} onSubmit={send}>
           <label className="field"><span>Project title{req}</span>
@@ -139,20 +137,6 @@ export default function Submit() {
             <textarea className="textarea" rows={5} value={abstract} maxLength={3000} onChange={(e) => setAbstract(e.target.value)}
                       placeholder="What it does, who it is for, and how it works." />
           </label>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-            <label className="field"><span>Subject{req}</span>
-              <select className="select" value={subject} onChange={(e) => setSubject(Number(e.target.value))}>
-                <option value={0} disabled>Choose a subject</option>
-                {ref.subjects.map((s) => <option key={s.subject_id} value={s.subject_id}>{s.code} - {s.name}</option>)}
-              </select>
-            </label>
-            <label className="field"><span>Submit to (faculty){req}</span>
-              <select className="select" value={faculty} onChange={(e) => setFaculty(Number(e.target.value))}>
-                <option value={0} disabled>Choose a faculty member</option>
-                {ref.faculty.map((f) => <option key={f.user_id} value={f.user_id}>{f.name}</option>)}
-              </select>
-            </label>
-          </div>
           <label className="field"><span>Teammates' PRNs</span>
             <input className="input" value={mates} maxLength={300} onChange={(e) => setMates(e.target.value)} placeholder="1032240102, 1032240103" />
             <small>Separate them with commas. Leave it empty if you worked alone.</small>
@@ -197,6 +181,38 @@ export default function Submit() {
         </form>
         <div className="narrow"><SimilarPast title={title} abstract={abstract} /></div>
       </div>
+    </>
+  );
+}
+
+
+// Projects go in through the link a faculty member sends to the class. This page
+// opens that link when a student has it as text, e.g. pasted from WhatsApp.
+export default function Submit() {
+  const { go } = useApp();
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function open(e: FormEvent) {
+    e.preventDefault();
+    const code = /([a-z0-9]{6,16})\/?$/i.exec(text.trim())?.[1]?.toLowerCase();
+    if (!code) return setError("Paste the whole link your faculty member sent, ending in /s/ and a code.");
+    go(`/s/${code}`);
+  }
+  return (
+    <>
+      <PageHead title="Submit a project"
+                sub="Projects are submitted through the link your faculty member sends to the class. Open that link, or paste it here." />
+      <form className="card pad-lg stack" style={{ gap: 12, maxWidth: 640 }} onSubmit={open}>
+        <label className="field"><span>Submission link</span>
+          <input className="input mono" value={text} maxLength={300} placeholder={`${window.location.origin}/s/…`}
+                 onChange={(e) => { setText(e.target.value); setError(null); }} />
+        </label>
+        <div className="row" style={{ gap: 12 }}>
+          <button className="btn primary" disabled={!text.trim()}>Open</button>
+          {error && <span className="error-text" role="alert">{error}</span>}
+        </div>
+      </form>
     </>
   );
 }

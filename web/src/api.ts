@@ -46,6 +46,9 @@ export interface Project {
   subject_name: string;
   faculty_id: number;
   faculty: string;
+  submission_link_id: number;
+  class_name: string;
+  purpose: string;
   project_type: ProjectType;
   status: Status;
   review_note: string | null;
@@ -69,16 +72,50 @@ export interface Closest extends Scored {
   closest_year: string | null;
 }
 
-// GET /projects/{id}: the card plus what this person may see and do.
-export interface ProjectDetail extends Project {
+// One student of a project with their marks, as the link's faculty member sees it.
+export interface StudentMarks {
+  user_id: number;
+  name: string;
+  prn: string;
+  is_leader: boolean;
   marks: number | null;
+}
+
+// GET /projects/{id}: the card plus what this person may see and do. team_score is
+// the average of the students' marks, once all of them have marks.
+export interface ProjectDetail extends Project {
+  team_score: number | null;
   marks_hidden: boolean;
   max_marks: number;
+  my_marks: number | null;
+  graded: number | null;
+  students: StudentMarks[] | null;
   is_member: boolean;
   is_faculty: boolean;
   can_change: boolean;
   closest: (Closest & { closest_id: number | null }) | null;
 }
+
+// A faculty member's submission link with how far its class has got (link_progress).
+export interface SubmissionLink {
+  submission_link_id: number;
+  code: string;
+  subject: string;
+  subject_name: string;
+  academic_year: string;
+  class_name: string;
+  purpose: string;
+  max_marks: number;
+  is_open: boolean;
+  created_at: string;
+  waiting: number;
+  approved: number;
+  rejected: number;
+  graded: number;
+  students: number;
+}
+
+export const linkUrl = (code: string) => `${window.location.origin}/s/${code}`;
 
 export interface Subject {
   subject_id: number;

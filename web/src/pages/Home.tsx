@@ -6,7 +6,8 @@ import { useApp } from "../context";
 import { formatDay } from "../format";
 import { useLoad } from "../hooks";
 
-type MyProject = Project & { is_leader: boolean; marks: number | null; max_marks: number };
+// marks are this student's own; team_score is the team's average once everyone has marks.
+type MyProject = Project & { is_leader: boolean; marks: number | null; team_score: number | null; max_marks: number };
 
 const percent = (marks: number, max: number) => Math.round((100 * marks) / max);
 
@@ -38,7 +39,7 @@ function MyProjectTile({ p }: { p: MyProject }) {
       <div className="row-top" style={{ gap: 14 }}>
         <div className="grow">
           <div className="strong title" style={{ fontSize: 15 }}>{p.title}</div>
-          <div className="meta">{p.subject} · {p.faculty}{p.is_leader ? " · you lead" : ""}</div>
+          <div className="meta">{p.subject} · {p.purpose} · {p.faculty}{p.is_leader ? " · you lead" : ""}</div>
         </div>
         {p.marks !== null
           ? <div className="stack-sm" style={{ alignItems: "center", gap: 2 }}>
@@ -69,8 +70,6 @@ function StudentHome() {
   const current = all.filter((p) => p.academic_year === ref.current_year);
   const earlier = all.filter((p) => p.academic_year !== ref.current_year);
   const graded = all.filter((p) => p.marks !== null);
-  const average = graded.length
-    ? Math.round(graded.reduce((a, p) => a + percent(p.marks!, p.max_marks), 0) / graded.length) : null;
   const count = (s: Status) => all.filter((p) => p.status === s).length;
   const slices: Slice[] = [
     { label: "Approved", value: count("approved"), tone: "up" },
@@ -87,8 +86,6 @@ function StudentHome() {
         <StatTile icon="folder" label="Your projects" value={all.length} hint={`${current.length} this year`} />
         <StatTile icon="check" label="Approved" value={count("approved")} tone="up" />
         <StatTile icon="clock" label="Waiting for review" value={count("submitted")} tone="warn" />
-        <StatTile icon="star" label="Average marks" value={average === null ? "–" : `${average}%`}
-                  hint={graded.length ? `over ${graded.length} graded` : "nothing graded yet"} />
       </div>
 
       <div className="dash">
@@ -105,7 +102,7 @@ function StudentHome() {
             </div>
           </Panel>
           {graded.length > 0 && (
-            <Panel title="Your marks" sub="Each graded project, as a share of its subject's maximum">
+            <Panel title="Your marks" sub="Your own marks on each graded project, as a share of the maximum">
               <Columns suffix="%" columns={graded.slice().reverse().map((p) => ({
                 label: `${p.subject} ${p.academic_year.slice(2)}`,
                 parts: [{ name: p.title, value: percent(p.marks!, p.max_marks), tone: "accent" }],
@@ -167,13 +164,16 @@ function StudentHome() {
 }
 
 interface FacultyData {
-  waiting: (Closest & { project_id: number; title: string; subject: string; created_at: string })[];
+  waiting: (Closest & { project_id: number; title: string; subject: string; class_name: string; created_at: string })[];
   approved: number;
   rejected: number;
   graded: number;
-  to_grade: { project_id: number; title: string; academic_year: string; subject: string; max_marks: number }[];
+  to_grade: { project_id: number; title: string; academic_year: string; subject: string; class_name: string;
+              max_marks: number; graded: number; members: number }[];
   by_subject: { subject: string; approved: number; waiting: number; average_percent: number | null }[];
   percents: number[];
+  links: { submission_link_id: number; subject: string; class_name: string; purpose: string;
+           waiting: number; approved: number; graded: number }[];
 }
 
 const BUCKETS = [[0, 50, "<50"], [50, 60, "50s"], [60, 70, "60s"], [70, 80, "70s"], [80, 90, "80s"], [90, 101, "90+"]] as const;
@@ -181,7 +181,7 @@ const BUCKETS = [[0, 50, "<50"], [50, 60, "50s"], [60, 70, "60s"], [70, 80, "70s
 function FacultyHome() {
   const { me, ref, go } = useApp();
   const { data, error, loading, reload } = useLoad<FacultyData>("/home");
-  const head = <PageHead title={`Hello, ${me.name}`} sub={`Projects submitted to you · ${ref.current_year}`} />;
+  const head = <PageHead title={`Hello, ${me.name}`} sub={`Projects that came in through your submission links · ${ref.current_year}`} />;
   if (loading) return <>{head}<Loading /></>;
   if (error || !data) return <>{head}<Failed message={error ?? ""} retry={reload} /></>;
 
@@ -208,14 +208,14 @@ function FacultyHome() {
       <div className="dash">
         <div className="dash-main">
           <Panel title="Waiting for your review" sub="Oldest first, with the closest past project" flush
-                 action={<button className="link" onClick={() => go("/review")}>All projects</button>}>
+                 action={<button className="link" onClick={() => go("/links")}>Your links</button>}>
             <div className="divided">
               {data.waiting.map((p) => (
                 <AppLink key={p.project_id} to={`/projects/${p.project_id}`} className="row-link">
                   <div className="row" style={{ padding: "12px 18px", gap: 14 }}>
                     <div className="grow">
                       <div className="strong title">{p.title}</div>
-                      <div className="meta">{p.subject} · submitted {formatDay(p.created_at)}
+                      <div className="meta">{p.subject} · {p.class_name} · submitted {formatDay(p.created_at)}
                         {p.closest_title ? ` · closest: ${p.closest_title} (${p.closest_year})` : ""}</div>
                     </div>
                     {p.similarity !== null && (
@@ -240,7 +240,7 @@ function FacultyHome() {
                 parts: [{ name: "Approved", value: s.approved, tone: "up" }, { name: "Waiting", value: s.waiting, tone: "warn" }],
               }))} />
             </Panel>
-            <Panel title="Marks you gave" sub="Graded projects by share of the maximum">
+            <Panel title="Marks you gave" sub="Team scores by share of the maximum">
               {data.percents.length
                 ? <Columns height={150} columns={BUCKETS.map(([lo, hi, label]) => ({
                     label, parts: [{ name: "Projects", value: data.percents.filter((x) => x >= lo && x < hi).length, tone: "accent" }],
@@ -258,13 +258,30 @@ function FacultyHome() {
               <Legend slices={slices} />
             </div>
           </Panel>
+          <Panel title="Open submission links" flush
+                 action={<button className="link" onClick={() => go("/links")}>New link</button>}>
+            <div className="divided">
+              {data.links.map((l) => (
+                <AppLink key={l.submission_link_id} to={`/links/${l.submission_link_id}`} className="row-link">
+                  <div className="row" style={{ padding: "10px 18px", gap: 10 }}>
+                    <div className="grow">
+                      <div className="strong title">{l.subject} · {l.class_name}</div>
+                      <div className="meta">{l.purpose} · {l.approved} approved · {l.graded} graded</div>
+                    </div>
+                    {l.waiting > 0 && <span className="small" style={{ color: "var(--warn)", whiteSpace: "nowrap" }}>{l.waiting} waiting</span>}
+                  </div>
+                </AppLink>
+              ))}
+              {data.links.length === 0 && <div className="small muted" style={{ padding: "14px 18px" }}>No open links. Make one for each class.</div>}
+            </div>
+          </Panel>
           <Panel title="Approved, not graded yet" flush>
             <div className="divided">
               {data.to_grade.map((p) => (
                 <AppLink key={p.project_id} to={`/projects/${p.project_id}`} className="row-link">
                   <div style={{ padding: "10px 18px" }}>
                     <div className="strong title">{p.title}</div>
-                    <div className="meta">{p.academic_year} · {p.subject} · out of {p.max_marks}</div>
+                    <div className="meta">{p.subject} · {p.class_name} · {p.graded} of {p.members} students graded</div>
                   </div>
                 </AppLink>
               ))}
@@ -272,7 +289,7 @@ function FacultyHome() {
             </div>
           </Panel>
           {data.by_subject.some((s) => s.average_percent !== null) && (
-            <Panel title="Average marks by subject">
+            <Panel title="Average team score by subject">
               <Bars suffix="%" rows={data.by_subject.filter((s) => s.average_percent !== null)
                 .map((s) => ({ label: s.subject, value: s.average_percent! }))} />
             </Panel>

@@ -7,35 +7,32 @@ import { useApp } from "../context";
 import { formatDay } from "../format";
 import { useLoad } from "../hooks";
 
-// The faculty member's part: approve or reject a submission (marks can go in at the
-// same time), or change the marks of an approved one.
+// The link's faculty member: approve or reject a submission, then give each student
+// marks. The team score is the average once every student has marks.
 function FacultyPanel({ p, onDone }: { p: ProjectDetail; onDone: (message: string) => void }) {
   const [note, setNote] = useState(p.review_note ?? "");
-  const [marks, setMarks] = useState(p.marks === null ? "" : String(p.marks));
+  const [marks, setMarks] = useState<Record<number, string>>(
+    () => Object.fromEntries((p.students ?? []).map((s) => [s.user_id, s.marks === null ? "" : String(s.marks)])));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function run(action: () => Promise<unknown>, message: string) {
+  async function run(action: () => Promise<string>) {
     setBusy(true);
     setError(null);
     try {
-      await action();
-      onDone(message);
+      onDone(await action());
     } catch (e) {
       setError((e as Error).message);    // the database's own refusal, e.g. marks above the maximum
     } finally {
       setBusy(false);
     }
   }
-  const value = marks.trim() === "" ? null : Number(marks);
-  const marksField = (
-    <label className="field"><span>Marks (out of {p.max_marks})</span>
-      <input className="input" type="number" min={0} max={p.max_marks} step={0.5} value={marks} style={{ maxWidth: 140 }}
-             onChange={(e) => { setMarks(e.target.value); setError(null); }} />
-    </label>
-  );
 
   if (p.status === "submitted") {
+    const decide = (status: "approved" | "rejected") => run(async () => {
+      await api(`/projects/${p.project_id}/decision`, { body: { status, note } });
+      return status === "approved" ? "Approved. You can give the marks now." : "Rejected.";
+    });
     return (
       <div className="card pad stack">
         <div className="strong">Your review</div>
@@ -51,31 +48,35 @@ function FacultyPanel({ p, onDone }: { p: ProjectDetail; onDone: (message: strin
           <textarea className="textarea" rows={3} value={note} maxLength={1000} onChange={(e) => { setNote(e.target.value); setError(null); }}
                     placeholder="Needed when it is very close to an earlier project: what is different about this one?" />
         </label>
-        {marksField}
         <div className="row" style={{ gap: 8 }}>
-          <button className="btn primary" disabled={busy}
-                  onClick={() => run(() => api(`/projects/${p.project_id}/decision`, { body: { status: "approved", note, marks: value } }), "Approved.")}>
-            Approve
-          </button>
-          <button className="btn danger" disabled={busy}
-                  onClick={() => run(() => api(`/projects/${p.project_id}/decision`, { body: { status: "rejected", note } }), "Rejected.")}>
-            Reject
-          </button>
+          <button className="btn primary" disabled={busy} onClick={() => decide("approved")}>Approve</button>
+          <button className="btn danger" disabled={busy} onClick={() => decide("rejected")}>Reject</button>
         </div>
         {error && <div className="error-text" role="alert">{error}</div>}
       </div>
     );
   }
-  if (p.status !== "approved") return null;
+  if (p.status !== "approved" || !p.students) return null;
+
+  const save = () => run(async () => {
+    const body = { marks: p.students!.map((s) => ({ user_id: s.user_id, marks: marks[s.user_id].trim() === "" ? null : Number(marks[s.user_id]) })) };
+    const saved = await api<{ team_score: number | null }>(`/marks/${p.project_id}`, { method: "PUT", body });
+    return saved.team_score === null ? "Marks saved." : `Marks saved. Team score ${saved.team_score} / ${p.max_marks}.`;
+  });
   return (
     <div className="card pad stack">
-      <div className="strong">Marks</div>
-      {marksField}
+      <div className="strong">Marks, out of {p.max_marks} each</div>
+      <div className="stack-sm" style={{ gap: 8 }}>
+        {p.students.map((s) => (
+          <label key={s.user_id} className="row" style={{ gap: 10 }}>
+            <span className="grow small">{s.name}{s.is_leader ? " (lead)" : ""} <span className="muted mono">{s.prn}</span></span>
+            <input className="input mono" type="number" min={0} max={p.max_marks} step={0.5} value={marks[s.user_id]} style={{ width: 90 }}
+                   aria-label={`Marks for ${s.name}`} onChange={(e) => { setMarks({ ...marks, [s.user_id]: e.target.value }); setError(null); }} />
+          </label>
+        ))}
+      </div>
       <div className="row" style={{ gap: 8 }}>
-        <button className="btn primary" disabled={busy}
-                onClick={() => run(() => api(`/marks/${p.project_id}`, { method: "PUT", body: { marks: value } }), "Marks saved.")}>
-          Save marks
-        </button>
+        <button className="btn primary" disabled={busy} onClick={save}>Save marks</button>
       </div>
       {error && <div className="error-text" role="alert">{error}</div>}
     </div>
@@ -91,7 +92,7 @@ function MarksBox({ p, onChanged }: { p: ProjectDetail; onChanged: () => void })
     setBusy(true);
     try {
       await api(`/projects/${p.project_id}/marks-public`, { method: "PUT", body: { public: on } });
-      toast(on ? "Marks are now shown to everyone." : "Marks are now shown only to the team and faculty.");
+      toast(on ? "The team score is now shown to everyone." : "The team score is now shown only to the team and faculty.");
       onChanged();
     } catch (e) {
       toast((e as Error).message);
@@ -99,14 +100,30 @@ function MarksBox({ p, onChanged }: { p: ProjectDetail; onChanged: () => void })
       setBusy(false);
     }
   }
+  const out = <span className="muted" style={{ fontSize: 16, fontWeight: 400 }}>/ {p.max_marks}</span>;
   return (
     <div className="card pad stack-sm">
-      <div className="label-sm">Marks</div>
-      {p.marks !== null
-        ? <div className="marks-big">{p.marks} <span className="muted" style={{ fontSize: 16, fontWeight: 400 }}>/ {p.max_marks}</span></div>
-        : <div className="small muted">{p.marks_hidden ? "Only the team and their faculty member can see the marks." : "Not graded yet."}</div>}
       {p.is_member && (
-        <Toggle on={p.marks_public} onChange={share} disabled={busy}>Show our marks to everyone</Toggle>
+        <>
+          <div className="label-sm">Your marks</div>
+          {p.my_marks !== null ? <div className="marks-big">{p.my_marks} {out}</div> : <div className="small muted">Not graded yet.</div>}
+        </>
+      )}
+      <div className="label-sm" style={p.is_member ? { marginTop: 8 } : undefined}>Team score</div>
+      {p.team_score !== null
+        ? <div className="marks-big">{p.team_score} {out}</div>
+        : <div className="small muted">
+            {p.marks_hidden ? "Only the team and their faculty member can see the marks."
+              : p.graded ? `${p.graded} of ${p.students?.length} students graded. The team score is their average.`
+              : "Not graded yet. The team score is the average of each student's marks."}
+          </div>}
+      {p.students && !p.is_faculty && (
+        <div className="stack-sm small" style={{ marginTop: 6, gap: 2 }}>
+          {p.students.map((s) => <div key={s.user_id} className="row"><span className="grow">{s.name}</span><span>{s.marks ?? "–"}</span></div>)}
+        </div>
+      )}
+      {p.is_member && (
+        <Toggle on={p.marks_public} onChange={share} disabled={busy}>Show our team score to everyone</Toggle>
       )}
     </div>
   );
@@ -124,7 +141,8 @@ export default function ProjectPage({ id }: { id: number }) {
   const decidedLabel = p.status === "approved" ? "Approved" : "Rejected";
   return (
     <>
-      <PageHead title={p.title} back={me.role === "student" && p.is_member ? { to: "/", label: "Dashboard" } : { to: "/search", label: "Search" }} />
+      <PageHead title={p.title} back={p.is_faculty ? { to: `/links/${p.submission_link_id}`, label: `${p.purpose} · ${p.class_name}` }
+        : me.role === "student" && p.is_member ? { to: "/", label: "Dashboard" } : { to: "/search", label: "Search" }} />
       <div className="project">
         <div>
           {report
@@ -136,6 +154,9 @@ export default function ProjectPage({ id }: { id: number }) {
             <div className="row"><StatusTag status={p.status} /></div>
             <dl className="facts">
               <dt>Subject</dt><dd>{p.subject} - {p.subject_name}</dd>
+              <dt>Submission</dt><dd>{p.is_faculty
+                ? <AppLink to={`/links/${p.submission_link_id}`}>{p.purpose} · {p.class_name}</AppLink>
+                : `${p.purpose} · ${p.class_name}`}</dd>
               <dt>Year</dt><dd>{p.academic_year}</dd>
               <dt>Team</dt><dd>{p.members ?? "Not recorded"}</dd>
               <dt>{p.status === "approved" ? "Approved by" : "Faculty"}</dt><dd>{p.faculty}</dd>

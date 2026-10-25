@@ -6,9 +6,11 @@ import { AppContext } from "./context";
 import { usePath, type Page } from "./hooks";
 import AccountPage from "./pages/Account";
 import Home from "./pages/Home";
+import LinkPage from "./pages/LinkPage";
+import Links from "./pages/Links";
+import OpenLink from "./pages/OpenLink";
 import People from "./pages/People";
 import ProjectPage from "./pages/Project";
-import Review from "./pages/Review";
 import Search from "./pages/Search";
 import SignIn from "./pages/SignIn";
 import Subjects from "./pages/Subjects";
@@ -20,7 +22,7 @@ const PAGES: Record<Page, () => ReactNode> = {
   "/search": () => <Search />,
   "/submit": () => <Submit />,
   "/trends": () => <Trends />,
-  "/review": () => <Review />,
+  "/links": () => <Links />,
   "/people": () => <People />,
   "/subjects": () => <Subjects />,
   "/account": () => <AccountPage />,
@@ -89,20 +91,28 @@ export default function App() {
   if (startError && !me) return <div className="signin"><div className="signin-box"><Failed message={startError} /></div></div>;
   if (me === undefined) return null;
   if (me === null) {
-    return <SignIn notice={notice} demo={demo} onSignedIn={(account) => { setNotice(null); setMe(account); }} />;
+    // A submission link opened before signing in: the same page opens right after.
+    const forLink = path.startsWith("/s/") ? "Sign in with your college account to open the submission link." : null;
+    return <SignIn notice={notice ?? forLink} demo={demo} onSignedIn={(account) => { setNotice(null); setMe(account); }} />;
   }
   if (me.must_change_password) {
     return <AccountPage forced me={me} onChanged={setMe} onSignOut={signOut} />;
   }
   if (!ref) return <div className="page"><Loading /></div>;
 
-  // A project's own page, or one of the pages this account has. Anything else (after
-  // switching accounts, or a typed URL) opens Home.
+  // A project's own page, a submission link (a faculty member's own, or one sent to a
+  // class), or one of the pages this account has. Anything else (after switching
+  // accounts, or a typed URL) opens Home.
   const projectId = /^\/projects\/(\d+)$/.exec(path)?.[1];
+  const linkId = me.role === "faculty" ? /^\/links\/(\d+)$/.exec(path)?.[1] : undefined;
+  const code = /^\/s\/([a-z0-9]{6,16})$/.exec(path)?.[1];
   const allowed: string[] = navFor(me, 0).map((n) => n.path).concat("/account");
-  const current = projectId ? path : allowed.includes(path) ? path : "/";
+  const current = projectId || linkId || code ? path : allowed.includes(path) ? path : "/";
   if (current !== path) window.history.replaceState(null, "", current);
-  const page = projectId ? <ProjectPage id={Number(projectId)} /> : PAGES[current as Page]();
+  const page = projectId ? <ProjectPage id={Number(projectId)} />
+    : linkId ? <LinkPage id={Number(linkId)} />
+    : code ? <OpenLink code={code} />
+    : PAGES[current as Page]();
 
   return (
     <AppContext.Provider value={{ me, ref, go, toast, refreshCounts }}>

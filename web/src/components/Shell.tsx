@@ -20,7 +20,7 @@ export function navFor(me: Account, waiting: number): NavItem[] {
   ];
   if (me.role === "student") items.push({ path: "/submit", label: "Submit a project", icon: "upload", group: "" });
   items.push({ path: "/trends", label: "Trends", icon: "chart", group: "" });
-  if (me.role === "faculty") items.push({ path: "/review", label: "Review and marks", icon: "review", group: "Faculty", count: waiting });
+  if (me.role === "faculty") items.push({ path: "/links", label: "Submission links", icon: "link", group: "Faculty", count: waiting });
   if (me.is_admin) {
     items.push({ path: "/people", label: "People", icon: "people", group: "Admin" });
     items.push({ path: "/subjects", label: "Subjects", icon: "book", group: "Admin" });
@@ -74,17 +74,17 @@ export function Shell({ me, path, go, waiting, demo, onSwitch, switchError, onSi
       <aside className="side">
         <div className="brand">
           <div className="wordmark">PBL Tracker</div>
-          <span className="muted small">MIT-WPU</span>
         </div>
         <nav className="nav" aria-label="Pages">
           {navFor(me, waiting).map((item) => {
             const heading = item.group && item.group !== lastGroup ? item.group : null;
             lastGroup = item.group;
+            const active = path === item.path || (item.path !== "/" && path.startsWith(`${item.path}/`));
             return (
               <div key={item.path} style={{ display: "flex", flexDirection: "column" }}>
                 {heading && <div className="nav-group">{heading}</div>}
-                <button className={`nav-item${path === item.path ? " active" : ""}`}
-                        aria-current={path === item.path ? "page" : undefined} onClick={() => go(item.path)}>
+                <button className={`nav-item${active ? " active" : ""}`}
+                        aria-current={active ? "page" : undefined} onClick={() => go(item.path)}>
                   <Icon name={item.icon} size={17} />
                   <span>{item.label}</span>
                   {!!item.count && <span className="nav-count">{item.count}</span>}

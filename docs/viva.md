@@ -1,6 +1,6 @@
 # Viva notes
 
-## Demo order (about 8 minutes)
+## Demo order (about 9 minutes)
 
 Before the viva: open the app once so the model is loaded, and reset the database if you
 rehearsed on it:
@@ -13,7 +13,7 @@ python -m scripts.embed_projects
 
 All sample accounts use the `SEED_PASSWORD` from `.env`. With `DEMO_SWITCHER=on`, use the
 sidebar's "Switch account" menu instead of signing out and in again. Keep two small PDFs
-and a .pptx on the desktop for steps 3 and 4.
+and a .pptx on the desktop for steps 4 and 5.
 
 1. **The problem (30 s).** Sign in as student `1032240102` (Akash Mane). Trends page:
    the most used tags per year, then "Ideas that keep coming back". Face recognition
@@ -22,61 +22,96 @@ and a .pptx on the desktop for steps 3 and 4.
    patient data*. Switch to **Keywords**: nothing. Switch to **Meaning**: Cardiac Risk
    Estimation and Heart Disease Prediction come first, although the cardiac project
    never says "heart". Then filter by subject IOT-PBL, type hardware, tag ESP32.
-3. **Submit a project (1 min).** Submit page. Title *Attendance from classroom CCTV*,
-   abstract *Recognise student faces from the CCTV camera in each classroom and mark
-   attendance automatically during the first ten minutes.* The side panel shows the
-   closest past projects, the top one marked as a near duplicate. Pick ML-PBL and
-   Prof. S. Rao, type software, teammates `1032240105` and `1032240106`, tags Python and
+3. **A submission link (1 min).** Sign in as `srao@mitwpu.edu.in`. Submission links: the
+   ML-PBL link for TY ECE Div B is there, with Rohan's team's project waiting. Make a new
+   one: ML-PBL, class *TY ECE Div A*, for *LCA 2*, each student out of 10. Its page shows
+   the URL with a random code; press Copy link.
+4. **Submit through the link (1 min).** Switch to student `1032240102` (Akash Mane) and
+   open the copied link. The page says who it is for and lists the class's projects.
+   Title *Attendance from classroom CCTV*, abstract *Recognise student faces from the CCTV
+   camera in each classroom and mark attendance automatically during the first ten
+   minutes.* The side panel shows the closest past projects, the top one marked as a near
+   duplicate. Type software, teammates `1032240105` and `1032240106`, tags Python and
    OpenCV, and a GitHub link. Press Submit without a report: it asks for the PDF. Attach
-   one of the PDFs and submit. The project page opens with the report on the left,
-   marked "Waiting for review".
-4. **Links and files (1 min).** Sign in as `1032240101` (Rohan). On the Smart Water Tank
+   one of the PDFs and submit. The project page opens with the report on the left, marked
+   "Waiting for review". Open the link again: it says the team has submitted, and shows
+   no second form.
+5. **Links and files (1 min).** Sign in as `1032240101` (Rohan). On the Smart Water Tank
    project, add a working demo link, replace the report with the other PDF and add the
    .pptx as the presentation. Try a .txt as the report: refused. The report can only be
    replaced, never removed.
-5. **Faculty (1.5 min).** Sign in as `srao@mitwpu.edu.in`. The dashboard shows what is waiting and how close each submission is to a past project.
-   Open *Automatic Classroom Attendance from CCTV Footage*: the report is on the left,
-   the decision on the right. Approve with an empty note and the database refuses, naming
-   the closest project. Write a note and approve again with 28 marks: it goes through,
-   and the approval date appears.
-6. **Marks (30 s).** Sign in as `riyer@mitwpu.edu.in`. Open the water tank project: it is
-   out of 33. Type 34: refused with the database's message. Type 27.5: saved. Switch to
-   Akash, who isn't in the team: the marks are hidden. Switch to Rohan, turn on "Show our
-   marks to everyone", and Akash now sees 27.5 / 33.
-7. **Admin (1 min).** Sign in as `nshaikh@mitwpu.edu.in`. Subjects: CN-TH is out of 5,
-   and a new subject can be added with any maximum. People: add a student, which shows a
+6. **Review (1 min).** Switch to `srao@mitwpu.edu.in`. The dashboard shows what is waiting
+   and how close each submission is to a past project. Open *Automatic Classroom
+   Attendance from CCTV Footage*: the report is on the left, the decision on the right.
+   Approve with an empty note and the database refuses, naming the closest project. Write
+   a note and approve again: it goes through, and the approval date appears.
+7. **Marks (1 min).** Still on that project, each of the four students has a marks box,
+   out of 33. Type 34 for one: refused with the database's message. Give 28, 26, 27 and
+   29: the team score shows as 27.5. Back on the link's page, Download marks gives a CSV
+   with every student's PRN, name, project, marks and team score. Switch to Akash, who
+   isn't in the team: no marks on the project page. Switch to Rohan, who sees their own
+   marks and the team score; turn on "Show our team score to everyone", and Akash now
+   sees 27.5 / 33.
+8. **Admin (1 min).** Sign in as `nshaikh@mitwpu.edu.in`. Subjects: CN-TH is usually out of
+   5, and a new subject can be added with any maximum; a link starts with its subject's. People: add a student, which shows a
    temporary password once; that student has to choose a new one at their first sign-in.
    Try a Gmail address: refused, only `@mitwpu.edu.in` accounts.
-8. **SQL (2 min).** `psql "<ADMIN_DATABASE_URL>" -f sql/demo.sql`. Walk through the errors
-   in steps 2-10, `pbl_app`'s privileges in 15, the joins in 16, and the index plans in 20.
+9. **SQL (2 min).** `psql "<ADMIN_DATABASE_URL>" -f sql/demo.sql`. Walk through the links
+   and marks in steps 3-6, the errors in steps 2-11, `pbl_app`'s privileges in 16, the
+   joins in 17, and the index plans in 21.
    It all rolls back at the end. Expected output: [demo-output.txt](demo-output.txt).
-9. **Cloud (30 s).** Supabase dashboard: Table Editor with the `pbl` schema. Backblaze
-   dashboard: the bucket's file browser with the files uploaded in step 4.
+10. **Cloud (30 s).** Supabase dashboard: Table Editor with the `pbl` schema. Backblaze
+   dashboard: the bucket's file browser with the files uploaded in steps 4 and 5.
 
 ## Likely questions
 
 **Why one `users` table for students and faculty?**
-Both are people who sign in, and both are referenced by projects: a team member through
-`project_members.user_id`, the faculty member through `projects.faculty_id`. One table
-gives one sign-in function and one place for emails. The differences are handled by
-constraints: `students_have_a_prn` (students have a PRN, faculty don't),
+Both are people who sign in, and both are referenced: a team member through
+`project_members.user_id`, the faculty member through `submission_links.faculty_id`. One
+table gives one sign-in function and one place for emails. The differences are handled
+by constraints: `students_have_a_prn` (students have a PRN, faculty don't),
 `only_faculty_are_admins`, and two triggers that make sure a team member is a student
-and a project's faculty member is faculty.
+and a link's owner is faculty.
+
+**Why a separate `submission_links` table?**
+Every project a class submits for one purpose shares the same faculty member, subject,
+year, class and maximum marks. Keeping them on each project would repeat them and let
+them disagree (a transitive dependency: project -> submission -> faculty). So the
+submission is its own table, and a project only keeps `submission_link_id`. It also
+gives the faculty member one thing to send: the link's random code is the URL.
+
+**How is the link's code made, and can someone guess one?**
+The column's default is `encode(gen_random_bytes(6), 'hex')`: 12 hex characters, about
+281 trillion possibilities. `pbl_app` has no INSERT or UPDATE rights on `code`, so the
+app can never pick an easy one. A code also only opens a page after a college sign-in.
 
 **Why isn't team size limited? Why can a student be in many projects?**
 Because that is how PBL works here. Teams range from 2 to 5, and each student does
 around 5 PBLs a semester, one per subject. The database enforces the rules that are
-really rules (only students in a team, one leader) and doesn't invent others.
+really rules (only students in a team, one leader, one live project per student in each
+submission link) and doesn't invent others.
 
-**How do marks work when subjects are marked out of different totals?**
-Each subject has `max_marks` (33 for a lab, 5 for a theory mini project, anything the
-admin sets). A project has one `marks` column. The `check_project` trigger looks up the
-project's subject and refuses anything above its maximum. A CHECK handles the lower
-bound (marks >= 0) because that needs nothing outside the row.
+**How do you stop a student submitting twice through the same link?**
+The `check_member` trigger refuses a student who already has a project in that link
+that wasn't rejected. Two submits at the same moment could both run the check before
+either commits, so the trigger first takes `pg_advisory_xact_lock(link, student)`: the
+second one waits, then sees the first and fails. A rejected project doesn't count, so
+the team can try again.
+
+**How do marks work?**
+Each student in a team gets their own marks, in `project_members.marks`, because the
+key (project, student) is exactly what the marks depend on. The maximum is on the link:
+the faculty member sets it, or it starts as the subject's usual total (33 for a lab, 5
+for a theory mini project). The `check_member` trigger looks up the link and refuses
+anything above it, and refuses marks on a project that isn't approved. A CHECK handles
+the lower bound (marks >= 0) because that needs nothing outside the row. The team score
+is the average, worked out by the `team_marks` view only once every member has marks,
+so it is never stored and can't go out of date.
 
 **Why a trigger for the maximum instead of a CHECK?**
 A CHECK can only see the row being written. The maximum is in another table
-(`subjects`), so only a trigger can compare against it.
+(`submission_links`), so only a trigger can compare against it. Another trigger stops a
+link's maximum being lowered below marks already given.
 
 **What is the difference between full-text search and vector search?**
 Full-text search matches words, after stemming ("predicting" and "prediction" become
@@ -91,7 +126,7 @@ different. We show similarity = 1 - distance because it's easier to read.
 **What is an HNSW index? Why doesn't EXPLAIN use it?**
 A graph of the vectors that lets Postgres jump to the nearest ones without comparing
 against every row. It's approximate: it can very rarely miss the true nearest neighbour.
-With 60 rows, reading the whole table is cheaper, so the planner skips the index; step 20
+With 60 rows, reading the whole table is cheaper, so the planner skips the index; step 21
 of the demo turns sequential scans off to show the plan that uses it.
 
 **Why does Python make the embeddings and not the database?**
@@ -113,8 +148,9 @@ links = 24 rows for one project, and any count over them would be wrong. Subquer
 one row per project.
 
 **Where are the many-to-many relationships?**
-Students-projects (`project_members`, which also stores the leader) and projects-tags
-(`project_tags`). Links and files are one-to-many from projects.
+Students-projects (`project_members`, which also stores the leader and each student's
+marks) and projects-tags (`project_tags`). Submission links to projects, and links and
+files from projects, are one-to-many.
 
 **Is the schema in 3NF? BCNF?**
 Yes to both. Every non-key column depends on the whole key and nothing else, and every
@@ -132,9 +168,10 @@ that describe the old text. `embed_projects.py` fills in every missing embedding
 
 **What can the app's database login do?**
 `pbl_app` can read what the pages show but not `password_hash`. It can update only a
-project's status, review note, marks, `marks_public` and embedding; it can't delete projects or users,
-and it creates them only through `submit_project()` and `create_user()`. Step 15 of the
-demo shows each refusal.
+project's status, review note, `marks_public` and embedding, a team member's marks, and a
+link's class, purpose, maximum and open flag (never its code); it can't delete projects
+or users, and it creates them only through `submit_project()` and `create_user()`.
+Step 16 of the demo shows each refusal.
 
 **What does `SECURITY DEFINER` mean, and why pin `search_path`?**
 The function runs with its owner's rights, so the app can create a project only through
@@ -142,8 +179,9 @@ The function runs with its owner's rights, so the app can create a project only 
 creating a look-alike table or operator in another schema and having the function use it.
 
 **Then who stops a faculty member from marking someone else's project?**
-The server. The UPDATE it runs is `... WHERE project_id = %s AND faculty_id = <me>`, so
-another faculty member's project simply isn't found. The trade-off is in
+The server. Every query joins the project's submission link and has
+`WHERE l.faculty_id = <me>`, so another faculty member's link or project simply isn't
+found. The trade-off is in
 [security.md](security.md): the database limits the app as a whole, the server decides
 between users.
 
@@ -186,9 +224,15 @@ The CHECK `college_email` on `users`: `email LIKE '%@mitwpu.edu.in'`. Every acco
 needs it, whether it comes from `create_user()`, the People page or the sample data.
 
 **Who sees the marks?**
-The team, its faculty member and the coordinator. `marks_public` on the project lets the
-team show them to everyone; only team members can switch it. The column is in the
-database; who is shown what is decided by the server.
+A student sees their own marks and the team score. The link's faculty member and the
+coordinator see everyone's. `marks_public` on the project lets the team show its team
+score to everyone; only team members can switch it, and a student's own marks are never
+public. The column is in the database; who is shown what is decided by the server.
+
+**Can the faculty member get the marks out?**
+The link's page has Download marks: a CSV with every student's PRN, name, project,
+status, marks and team score, which opens in Excel. Cells that start with `=`, `+`, `-`
+or `@` get a leading apostrophe, so a project title can't run as a formula.
 
 **Why two CHECK constraints for the academic year?**
 `academic_year_format` checks the pattern; `academic_year_sequence` checks that 27 follows
@@ -207,8 +251,8 @@ related topics 0.42-0.57. The ranges overlap, so the score can't decide alone. A
 0.70 we ask the faculty member to write down what is different; they still decide.
 
 **What if two teams submit the same title at the same moment?**
-The unique index on `(subject_id, academic_year, lower(title))` lets one commit and makes
-the other fail.
+Through the same link, the unique index on `(submission_link_id, lower(title))` lets one
+commit and makes the other fail.
 
 **How is it deployed?**
 The database is on Supabase and the files are in a Backblaze B2 bucket. The app connects
