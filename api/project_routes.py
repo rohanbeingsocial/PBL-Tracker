@@ -491,8 +491,19 @@ def submission_link(code: str = PathParam(pattern=LINK_CODE), account: db.Accoun
                WHERE c.submission_link_id = %s AND (c.status = 'approved' OR %s = ANY(c.member_ids) OR %s)
                ORDER BY mine DESC, c.title""",
             (account.user_id, link["submission_link_id"], account.user_id, is_owner or account.is_admin)).fetchall()
+        # A student's projects in other links, so the team can submit one of them here
+        # again (an LCA 1 project going on to LCA 2) instead of typing it all out.
+        saved = conn.execute(
+            """SELECT c.project_id, c.title, c.abstract, c.project_type, c.tags, c.links, c.files,
+                      c.subject, c.purpose, c.academic_year, c.status,
+                      ARRAY(SELECT u.prn::text FROM pbl.project_members pm JOIN pbl.users u USING (user_id)
+                            WHERE pm.project_id = c.project_id AND pm.user_id <> %s ORDER BY u.prn) AS teammates
+               FROM pbl.project_cards c
+               WHERE %s = ANY(c.member_ids) AND c.submission_link_id <> %s
+               ORDER BY c.created_at DESC""",
+            (account.user_id, account.user_id, link["submission_link_id"])).fetchall() if account.role == "student" else []
     live = next((p["project_id"] for p in projects if p["mine"] and p["status"] != "rejected"), None)
-    return {**link, "projects": projects, "my_project": live, "is_owner": is_owner}
+    return {**link, "projects": projects, "my_project": live, "is_owner": is_owner, "saved": saved}
 
 
 # Submitting a project -------------------------------------------------------------------
@@ -546,6 +557,17 @@ def _submit(account: db.Account, code: str, title: str, abstract: str, project_t
     return {"id": new_id, "faculty": faculty["faculty"]}
 
 
+def _saved_files(account: db.Account, project_id: int) -> dict[str, tuple[str, bytes]]:
+    """The report and presentation of one of the student's own projects, for submitting
+    it again through another link. The new project gets its own copy of each file."""
+    with session.transaction(account) as conn:
+        if not access(conn, project_id, account)["is_member"]:
+            raise HTTPException(403, "You can only submit a project again if you are in its team.")
+        files = conn.execute("SELECT kind, file_name, storage_path FROM pbl.project_files WHERE project_id = %s",
+                             (project_id,)).fetchall()
+    return {f["kind"]: (f["file_name"], storage.load(f["storage_path"])) for f in files}
+
+
 @router.post("/submissions")
 async def submit_project(code: str = Form(max_length=16),
                          title: str = Form(max_length=200),
@@ -555,14 +577,18 @@ async def submit_project(code: str = Form(max_length=16),
                          tags: list[str] = Form([]),
                          github: str = Form("", max_length=300),
                          demo: str = Form("", max_length=300),
-                         report: UploadFile = File(),
+                         report: UploadFile | None = File(None),
                          ppt: UploadFile | None = File(None),
+                         from_project: int | None = Form(None),
                          account: db.Account = session.student) -> dict:
     files = {}
     for kind, upload in (("report", report), ("ppt", ppt)):
         if upload is not None and upload.filename:
             data = await upload.read(MAX_BYTES + 1)
             files[kind] = (upload.filename, data)
+    # A saved project's files are used for whatever the team didn't attach again.
+    if from_project is not None:
+        files = {**await run_in_threadpool(_saved_files, account, from_project), **files}
     if "report" not in files:
         raise HTTPException(422, "Attach the project report (PDF).")
     return await run_in_threadpool(_submit, account, code, title, abstract, project_type,

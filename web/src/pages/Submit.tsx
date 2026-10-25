@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, postForm, type Band, type ProjectType } from "../api";
+import { api, postForm, type Band, type Link, type ProjectFile, type ProjectType, type Status } from "../api";
 import { AppLink, Closeness, PageHead, Segmented } from "../components/ui";
 import { useApp } from "../context";
 import { teamSize } from "../format";
@@ -57,21 +57,42 @@ function SimilarPast({ title, abstract }: { title: string; abstract: string }) {
   );
 }
 
+// One of the student's projects in another link, which the team can submit again.
+export interface SavedProject {
+  project_id: number;
+  title: string;
+  abstract: string;
+  project_type: ProjectType;
+  tags: string[];
+  links: Link[];
+  files: ProjectFile[];
+  subject: string;
+  purpose: string;
+  academic_year: string;
+  status: Status;
+  teammates: string[];
+}
+
 // The submit form of one submission link: the link fixes the subject, the faculty
 // member, the class and how many students a team has, so the team only describes its project.
-export function SubmitForm({ code, faculty, minTeam, maxTeam }:
-                           { code: string; faculty: string; minTeam: number; maxTeam: number | null }) {
+// Started from a saved project, the form is filled in from it and keeps its files
+// unless the team attaches new ones.
+export function SubmitForm({ code, faculty, minTeam, maxTeam, from }:
+                           { code: string; faculty: string; minTeam: number; maxTeam: number | null; from?: SavedProject }) {
   const { me, ref, toast, go } = useApp();
-  const [title, setTitle] = useState("");
-  const [abstract, setAbstract] = useState("");
-  const [type, setType] = useState<ProjectType>("software");
-  const [mates, setMates] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
+  const savedUrl = (label: string) => from?.links.find((l) => l.label === label)?.url ?? "";
+  const savedReport = from?.files.find((f) => f.kind === "report");
+  const savedPpt = from?.files.find((f) => f.kind === "ppt");
+  const [title, setTitle] = useState(from?.title ?? "");
+  const [abstract, setAbstract] = useState(from?.abstract ?? "");
+  const [type, setType] = useState<ProjectType>(from?.project_type ?? "software");
+  const [mates, setMates] = useState(from?.teammates.join(", ") ?? "");
+  const [tags, setTags] = useState<string[]>(from?.tags ?? []);
   const [newTag, setNewTag] = useState("");
   const [report, setReport] = useState<File | null>(null);
   const [ppt, setPpt] = useState<File | null>(null);
-  const [github, setGithub] = useState("");
-  const [demo, setDemo] = useState("");
+  const [github, setGithub] = useState(savedUrl("GitHub"));
+  const [demo, setDemo] = useState(savedUrl("Working demo"));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -90,8 +111,8 @@ export function SubmitForm({ code, faculty, minTeam, maxTeam }:
     if (!prns.every((m) => /^[0-9]{10}$/.test(m))) return "Enter each teammate's 10-digit PRN, separated by commas.";
     const team = 1 + new Set(prns.filter((m) => m !== me.prn)).size;
     if (team < minTeam || (maxTeam !== null && team > maxTeam)) return `This submission link takes ${teamSize(minTeam, maxTeam)}; yours has ${team}.`;
-    if (!report) return "Attach the project report (PDF).";
-    if (!report.name.toLowerCase().endsWith(".pdf")) return "The report has to be a PDF.";
+    if (!report && !savedReport) return "Attach the project report (PDF).";
+    if (report && !report.name.toLowerCase().endsWith(".pdf")) return "The report has to be a PDF.";
     if (ppt && !/\.(pptx|pdf)$/i.test(ppt.name)) return "The presentation has to be a .pptx or .pdf file.";
     if ([report, ppt].some((f) => f && f.size > MAX_BYTES)) return "Files can be at most 20 MB.";
     if ([github, demo].some((u) => u.trim() && !/^https?:\/\/\S+$/.test(u.trim()))) return "A link has to start with https:// or http://.";
@@ -111,8 +132,9 @@ export function SubmitForm({ code, faculty, minTeam, maxTeam }:
     tags.forEach((t) => form.append("tags", t));
     form.append("github", github.trim());
     form.append("demo", demo.trim());
-    form.append("report", report!);
+    if (report) form.append("report", report);
     if (ppt) form.append("ppt", ppt);
+    if (from) form.append("from_project", String(from.project_id));
     setBusy(true);
     setError(null);
     try {
@@ -166,13 +188,20 @@ export function SubmitForm({ code, faculty, minTeam, maxTeam }:
               <button type="button" className="btn" onClick={addTag} disabled={!newTag.trim()}>Add</button>
             </div>
           </div>
-          <label className="field"><span>Report (PDF){req}</span>
+          <label className="field"><span>Report (PDF){!savedReport && req}</span>
             <input type="file" accept=".pdf,application/pdf" onChange={(e) => setReport(e.target.files?.[0] ?? null)} />
-            <small>Up to 20 MB. This is what people see first when they open the project.</small>
+            <small>
+              {savedReport ? `The saved report, ${savedReport.file_name}, goes with it. Choose a file only to send a new one. `
+                           : "Up to 20 MB. "}
+              This is what people see first when they open the project.
+            </small>
           </label>
           <label className="field"><span>Presentation</span>
             <input type="file" accept=".pptx,.pdf" onChange={(e) => setPpt(e.target.files?.[0] ?? null)} />
-            <small>Optional. PowerPoint (.pptx) or PDF, up to 20 MB.</small>
+            <small>
+              {savedPpt ? `The saved presentation, ${savedPpt.file_name}, goes with it. Choose a file only to send a new one.`
+                        : "Optional. PowerPoint (.pptx) or PDF, up to 20 MB."}
+            </small>
           </label>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
             <label className="field"><span>GitHub link</span>

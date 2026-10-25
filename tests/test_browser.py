@@ -455,6 +455,13 @@ def test_a_waiting_project_is_seen_only_by_its_team_and_faculty(open_as, made):
     expect(rohan.get_by_text("1 more waiting for review")).to_be_visible()
     expect(rohan.get_by_role("button", name="Submit project")).to_be_visible()
     expect(rohan.get_by_text(CCTV)).to_have_count(0)
+    # Or the team starts from one of its projects in another link.
+    rohan.get_by_role("radio", name="Submit a saved project").click()
+    rohan.get_by_role("radio", name=re.compile("^Smart Water Tank Level Controller")).click()
+    expect(rohan.get_by_label("Project title")).to_have_value("Smart Water Tank Level Controller")
+    expect(rohan.get_by_text("The saved report, Smart Water Tank Level Controller.pdf, goes with it.")).to_be_visible()
+    rohan.get_by_role("radio", name="Submit a new project").click()
+    expect(rohan.get_by_label("Project title")).to_have_value("")
     expect(open_as(IYER, link).get_by_text(f"Students of {CLASS} submit their projects here.")).to_be_visible()
     rao = open_as(RAO, link)
     expect(rao.get_by_text("This is your link.")).to_be_visible()

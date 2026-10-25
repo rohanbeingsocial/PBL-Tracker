@@ -163,6 +163,9 @@ h1, h2, h3 { margin: 0; }
 a.row-link { color: inherit; display: block; }
 a.row-link:hover { text-decoration: none; background: var(--surface-2); }
 a.row-link:hover .title { color: var(--accent); }
+button.row-link { display: flex; width: 100%; font: inherit; color: inherit; cursor: pointer; }
+button.row-link:hover { background: var(--surface-2); }
+button.row-link.on { border-color: var(--accent); background: var(--accent-soft); }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field > span { font-size: 13.5px; font-weight: 600; }

@@ -240,6 +240,39 @@ def test_submitting_through_a_link_then_approving_grading_and_exporting(accounts
     assert lines[2] == "1262241766,Krishna Bhand,Hostel Laundry Slot Booking,approved,26,28.5,33"
 
 
+def test_a_team_submits_a_saved_project_again_through_another_link(accounts, files_here, rao_link):
+    rohan, krishna, rao = client_as(accounts["student"]), client_as(accounts["krishna"]), client_as(accounts["faculty"])
+    first = rohan.post("/api/submissions", data=submission(rao_link["code"], teammates="", tags=["Flask"]),
+                       files={"report": ("Laundry report.pdf", PDF, "application/pdf"),
+                              "ppt": ("Laundry.pptx", b"PK fake slides", "application/octet-stream")})
+    assert first.status_code == 200, first.text
+    first = first.json()["id"]
+    lca2 = rao.post("/api/links", json={"subject_id": 1, "class_name": "TY ECE Div T", "purpose": "Test LCA 2"}).json()
+    try:
+        assert first not in [p["project_id"] for p in rohan.get(f"/api/s/{rao_link['code']}").json()["saved"]]
+        saved = {p["project_id"]: p for p in rohan.get(f"/api/s/{lca2['code']}").json()["saved"]}[first]
+        assert saved["teammates"] == [] and saved["tags"] == ["Flask"] and saved["links"][0]["label"] == "GitHub"
+        assert {f["kind"] for f in saved["files"]} == {"report", "ppt"}
+        assert first not in [p["project_id"] for p in krishna.get(f"/api/s/{lca2['code']}").json()["saved"]]
+
+        # Someone outside the team can't send its files, and the saved files fill in only
+        # what wasn't attached again.
+        form = {**submission(lca2["code"], teammates=""), "from_project": str(first)}
+        assert krishna.post("/api/submissions", data=form).status_code == 404       # still waiting, so hidden from outsiders
+        again = rohan.post("/api/submissions", data=form,
+                           files={"ppt": ("Laundry v2.pptx", b"PK new slides", "application/octet-stream")})
+        assert again.status_code == 200, again.text
+        page = rohan.get(f"/api/projects/{again.json()['id']}").json()
+        assert page["submission_link_id"] == lca2["submission_link_id"] and page["purpose"] == "Test LCA 2"
+        assert {f["kind"]: f["file_name"] for f in page["files"]} == {"report": "Laundry report.pdf", "ppt": "Laundry v2.pptx"}
+        assert len(list(files_here.rglob("*.pdf"))) == 2                     # a copy of its own
+        assert rohan.get(f"/api/projects/{first}").json()["status"] == "submitted"
+    finally:
+        with psycopg.connect(require("ADMIN_DATABASE_URL")) as conn:
+            conn.execute("DELETE FROM pbl.projects WHERE submission_link_id = %s", (lca2["submission_link_id"],))
+            conn.execute("DELETE FROM pbl.submission_links WHERE submission_link_id = %s", (lca2["submission_link_id"],))
+
+
 def test_a_closed_or_unknown_link_takes_no_projects(accounts, files_here, rao_link):
     rao, rohan = client_as(accounts["faculty"]), client_as(accounts["student"])
     change = {"class_name": "TY ECE Div T", "purpose": "Test submission", "max_marks": 33,
