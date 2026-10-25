@@ -1,10 +1,12 @@
 """Loads data/faculty.csv, data/students.csv and data/projects.csv into the database.
 
 projects.csv is laid out like the sheet a department keeps today: one row per
-project, with members, tags and links packed into single cells separated by ';'.
-This script splits those cells into project_members, project_tags and
-project_links, which is the 1NF step from docs/design.md done in code. Each project
-also gets a one-page sample report (scripts/sample_reports.py) in the file storage.
+project, with members, marks, tags and links packed into single cells separated by
+';'. This script splits those cells into project_members, project_tags and
+project_links, which is the 1NF step from docs/design.md done in code. The class and
+purpose columns become one submission link per faculty member, subject, year, class
+and purpose; links from earlier years are closed. Each project also gets a one-page
+sample report (scripts/sample_reports.py) in the file storage.
 
 Every user gets the password in SEED_PASSWORD (sample data only, see data/README.md).
 
@@ -78,20 +80,31 @@ def load_projects(conn: psycopg.Connection) -> int:
     if unknown:
         sys.exit("Not in the subjects list (add them to sql/07_reference_data.sql first): " + ", ".join(sorted(unknown)))
 
+    current_year = conn.execute("SELECT pbl.current_academic_year()").fetchone()[0]
     added = 0
     for row in rows:
         year = row["academic_year"]
         start = int(year[:4])
         guide = faculty[row["faculty_email"].lower()]
+        # The sheet has no dates: links open at the start of term, projects come in on
+        # 1 August and are decided six weeks later.
+        link_id = conn.execute(
+            """INSERT INTO pbl.submission_links (faculty_id, subject_id, academic_year, class_name, purpose,
+                                                 is_open, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (faculty_id, subject_id, academic_year, lower(class_name), lower(purpose))
+               DO UPDATE SET is_open = EXCLUDED.is_open
+               RETURNING submission_link_id""",
+            (guide, subjects[row["subject"]], year, row["class"], row["purpose"], year == current_year,
+             date(start, 7, 1)),
+        ).fetchone()[0]
         new = conn.execute(
-            """INSERT INTO pbl.projects (title, abstract, subject_id, faculty_id, academic_year,
-                                         project_type, status, review_note, marks, created_at, decided_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-               ON CONFLICT (subject_id, academic_year, lower(title)) DO NOTHING
+            """INSERT INTO pbl.projects (submission_link_id, title, abstract, project_type, status, review_note,
+                                         created_at, decided_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (submission_link_id, lower(title)) DO NOTHING
                RETURNING project_id""",
-            (row["title"], row["abstract"], subjects[row["subject"]], guide,
-             year, row["type"], row["status"], row["review_note"] or None, row["marks"] or None,
-             # The sheet has no dates: submitted at the start of term, decided six weeks later.
+            (link_id, row["title"], row["abstract"], row["type"], row["status"], row["review_note"] or None,
              date(start, 8, 1), None if row["status"] == "submitted" else date(start, 9, 15)),
         ).fetchone()
         if new is None:
@@ -99,10 +112,15 @@ def load_projects(conn: psycopg.Connection) -> int:
         project_id = new[0]
         added += 1
 
+        members = split(row["members"])
+        marks = split(row["marks"]) or [None] * len(members)    # one per member, in the same order
+        if len(marks) != len(members):
+            sys.exit(f"{row['title']}: {len(members)} members but {len(marks)} marks")
         with conn.cursor() as cur:
             cur.executemany(
-                "INSERT INTO pbl.project_members (project_id, user_id, is_leader) VALUES (%s, %s, %s)",
-                [(project_id, students[prn], i == 0) for i, prn in enumerate(split(row["members"]))],  # first PRN leads
+                "INSERT INTO pbl.project_members (project_id, user_id, is_leader, marks) VALUES (%s, %s, %s, %s)",
+                [(project_id, students[prn], i == 0, mark)                                 # first PRN leads
+                 for i, (prn, mark) in enumerate(zip(members, marks))],
             )
             cur.executemany(
                 """INSERT INTO pbl.tags (name) VALUES (%s) ON CONFLICT ((lower(name))) DO NOTHING""",

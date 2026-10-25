@@ -7,17 +7,20 @@ the demo student `1032240101` (Rohan Deogaonkar, a team member; PRN and email ar
 |---|---|---|
 | `faculty.csv` | 8 | name, email, is_active, is_admin |
 | `students.csv` | 126 | prn, name, email |
-| `projects.csv` | 60 | academic_year, subject, title, abstract, faculty_email, status, type, members, tags, marks, review_note, links |
+| `projects.csv` | 60 | academic_year, subject, class, purpose, title, abstract, faculty_email, status, type, members, tags, marks, review_note, links |
 
-`projects.csv` is laid out the way faculty usually keep a sheet: `members`, `tags` and
-`links` hold several values separated by `;`. The first PRN in `members` is the team
-leader. Each link is written `label|url`, for example
-`GitHub|https://github.com/example/tank`. `type` is `software`, `hardware` or `both`. `status` is `submitted`
-(waiting for the faculty member), `approved` or `rejected`, and `marks` is the project's
-total out of its subject's maximum (empty if not marked yet; only approved projects have
-marks).
-`scripts/load_data.py` splits these into the normalised tables; tags that don't exist
-yet are added.
+`projects.csv` is laid out the way faculty usually keep a sheet: `members`, `tags`,
+`marks` and `links` hold several values separated by `;`. The first PRN in `members` is
+the team leader. `marks` has one value per member, in the same order as `members`, out of
+the subject's maximum (empty if not marked yet; only approved projects have marks). Each
+link is written `label|url`, for example `GitHub|https://github.com/example/tank`. `type`
+is `software`, `hardware` or `both`. `status` is `submitted` (waiting for the faculty
+member), `approved` or `rejected`. `class` (`TY ECE Div A`) and `purpose`
+(`Semester PBL`) say which submission the project came in through.
+`scripts/load_data.py` splits these into the normalised tables: one submission link for
+each faculty member, subject, year, class and purpose (open for this year, closed for
+earlier ones), then the projects, their members with their marks, tags and links. Tags
+that don't exist yet are added.
 
 The projects run from 2021-22 to 2026-27 across DBMS-PBL, ML-PBL and IOT-PBL. The
 subjects themselves, and what each is marked out of, come from
