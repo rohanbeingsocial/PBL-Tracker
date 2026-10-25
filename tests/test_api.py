@@ -1,7 +1,7 @@
 """The web server through FastAPI's test client (no browser needed): signing in and
 out, sessions, every page's data for every kind of user, what each is refused,
-submitting a project with its report, the project page, marks and who sees them, and
-links and files. Skipped where FastAPI isn't installed. Tests that add or change
+submission links, submitting a project with its report through one, the project
+page, each student's marks and who sees them, the marks export, and links and files. Skipped where FastAPI isn't installed. Tests that add or change
 anything put it back at the end."""
 import secrets
 import time
@@ -21,8 +21,8 @@ LOGINS = {"student": "1032240101", "akash": "1032240102", "faculty": "srao@mitwp
           "iyer": "riyer@mitwpu.edu.in", "admin": "nshaikh@mitwpu.edu.in"}
 PAGES = {
     "student": ["/home", "/reference", "/search", "/trends"],
-    "faculty": ["/home", "/reference", "/search", "/trends", "/review"],
-    "admin": ["/home", "/reference", "/search", "/trends", "/review", "/people", "/subjects"],
+    "faculty": ["/home", "/reference", "/search", "/trends", "/review", "/links"],
+    "admin": ["/home", "/reference", "/search", "/trends", "/review", "/links", "/people", "/subjects"],
 }
 PDF = b"%PDF-1.4 a small test report"
 
@@ -61,18 +61,30 @@ def water_tank(account: db.Account) -> dict:
     return find(account, "Smart Water Tank Level Controller")
 
 
-def delete_project(project_id: int) -> None:
-    """The app's login can't delete projects; tests clean up as the owner."""
-    with psycopg.connect(require("ADMIN_DATABASE_URL")) as conn:
-        conn.execute("DELETE FROM pbl.projects WHERE project_id = %s", (project_id,))
-
-
-def submission(**changes) -> dict:
-    form = {"title": "Hostel Laundry Slot Booking", "subject_id": "1", "project_type": "software",
+def submission(code: str, **changes) -> dict:
+    form = {"code": code, "title": "Hostel Laundry Slot Booking", "project_type": "software",
             "abstract": "Students book a washing machine slot in the hostel laundry and get a reminder.",
             "teammates": "1032240102", "github": "https://github.com/example/laundry", "demo": ""}
     form.update(changes)
     return form
+
+
+@pytest.fixture
+def rao_link(accounts):
+    """A DBMS-PBL submission link Prof. Rao opens for the test. It and its projects are
+    removed afterwards (as the owner; the app's login can't delete either)."""
+    made = client_as(accounts["faculty"]).post("/api/links", json={
+        "subject_id": 1, "class_name": "TY ECE Div T", "purpose": "Test submission"})
+    assert made.status_code == 200, made.text
+    yield made.json()
+    with psycopg.connect(require("ADMIN_DATABASE_URL")) as conn:
+        conn.execute("DELETE FROM pbl.projects WHERE submission_link_id = %s", (made.json()["submission_link_id"],))
+        conn.execute("DELETE FROM pbl.submission_links WHERE submission_link_id = %s", (made.json()["submission_link_id"],))
+
+
+def everyone(page: dict, marks: float | None) -> dict:
+    """The same marks for every student of the project."""
+    return {"marks": [{"user_id": st["user_id"], "marks": marks} for st in page["students"]]}
 
 
 # Signing in -------------------------------------------------------------------------
@@ -108,7 +120,7 @@ def test_every_page_loads(accounts, who):
 
 
 @pytest.mark.parametrize("who, paths", [
-    ("student", ["/review", "/people", "/subjects"]),
+    ("student", ["/review", "/links", "/links/1", "/links/1/marks.csv", "/people", "/subjects"]),
     ("faculty", ["/people", "/subjects"]),
 ])
 def test_pages_outside_the_role_are_refused(accounts, who, paths):
@@ -137,32 +149,47 @@ def test_project_page_shows_team_subject_faculty_and_dates(accounts):
     assert tank["can_change"] is False
 
 
-def test_marks_are_private_until_the_team_shows_them(accounts):
+def test_each_student_is_marked_and_the_team_score_is_private_until_shown(accounts):
     tank = water_tank(accounts["student"])
-    page = f"/api/projects/{tank['project_id']}"
+    page, marks = f"/api/projects/{tank['project_id']}", f"/api/marks/{tank['project_id']}"
     iyer, rohan, akash = client_as(accounts["iyer"]), client_as(accounts["student"]), client_as(accounts["akash"])
+    team = iyer.get(page).json()
+    assert len(team["students"]) == 3 and team["graded"] == 0
+    rohan_id = accounts["student"].user_id
     try:
-        assert iyer.put(f"/api/marks/{tank['project_id']}", json={"marks": 27.5}).status_code == 200
-        assert rohan.get(page).json()["marks"] == 27.5
+        # Rohan first: he sees his own marks, but no team score until everyone has marks.
+        assert iyer.put(marks, json={"marks": [{"user_id": rohan_id, "marks": 30}]}).json()["team_score"] is None
+        own = rohan.get(page).json()
+        assert own["my_marks"] == 30 and own["team_score"] is None and own["students"] is None
+
+        answer = iyer.put(marks, json={"marks": [{"user_id": st["user_id"], "marks": 30 if st["user_id"] == rohan_id else 27}
+                                                 for st in team["students"]]}).json()
+        assert answer["team_score"] == 28
+        assert rohan.get(page).json()["team_score"] == 28
         seen = akash.get(page).json()
-        assert seen["marks"] is None and seen["marks_hidden"] is True
+        assert seen["team_score"] is None and seen["marks_hidden"] is True and seen["my_marks"] is None
 
         switch = f"{page}/marks-public"
         assert akash.put(switch, json={"public": True}).status_code == 403                # not their project
         assert iyer.put(switch, json={"public": True}).status_code == 403                 # only the team decides
         assert rohan.put(switch, json={"public": True}).status_code == 200
-        assert akash.get(page).json()["marks"] == 27.5
+        seen = akash.get(page).json()
+        assert seen["team_score"] == 28 and seen["students"] is None                       # the score, not each student's
     finally:
         rohan.put(f"{page}/marks-public", json={"public": False})
-        iyer.put(f"/api/marks/{tank['project_id']}", json={"marks": None})
+        iyer.put(marks, json=everyone(team, None))
 
 
-def test_marks_are_entered_by_the_assigned_faculty_only(accounts):
+def test_marks_are_entered_by_the_links_faculty_only(accounts):
     tank = water_tank(accounts["student"])
     path = f"/api/marks/{tank['project_id']}"
-    assert client_as(accounts["faculty"]).put(path, json={"marks": 20}).status_code == 404     # Prof. Rao
-    too_many = client_as(accounts["iyer"]).put(path, json={"marks": 34})
+    rohan = [{"user_id": accounts["student"].user_id, "marks": 20}]
+    assert client_as(accounts["faculty"]).put(path, json={"marks": rohan}).status_code == 404     # Prof. Rao
+    iyer = client_as(accounts["iyer"])
+    too_many = iyer.put(path, json={"marks": [{"user_id": accounts["student"].user_id, "marks": 34}]})
     assert too_many.status_code == 400 and "maximum 33.0" in too_many.json()["detail"]
+    outsider = iyer.put(path, json={"marks": [{"user_id": accounts["akash"].user_id, "marks": 20}]})
+    assert outsider.status_code == 422                                                   # Akash isn't in the team
 
 
 def test_faculty_cannot_decide_on_someone_elses_project(accounts):
@@ -174,33 +201,100 @@ def test_faculty_cannot_decide_on_someone_elses_project(accounts):
 
 # Submitting ---------------------------------------------------------------------------
 
-def test_submitting_a_project_with_its_report(accounts, files_here):
+def test_submitting_through_a_link_then_approving_grading_and_exporting(accounts, files_here, rao_link):
     rohan, rao = client_as(accounts["student"]), client_as(accounts["faculty"])
-    sent = rohan.post("/api/submissions", data=submission(faculty_id=str(accounts["faculty"].user_id), tags=["Flask"]),
+    code, link_id = rao_link["code"], rao_link["submission_link_id"]
+    sent = rohan.post("/api/submissions", data=submission(code, tags=["Flask"]),
                       files={"report": ("Laundry report.pdf", PDF, "application/pdf"),
                              "ppt": ("Laundry.pptx", b"PK fake slides", "application/octet-stream")})
     assert sent.status_code == 200, sent.text
     project_id = sent.json()["id"]
-    try:
-        assert sent.json()["faculty"] == "Prof. S. Rao"
-        assert len(list(files_here.rglob("*.pdf"))) == 1 and len(list(files_here.rglob("*.pptx"))) == 1
-        page = rohan.get(f"/api/projects/{project_id}").json()
-        assert page["status"] == "submitted" and page["members"] == "Rohan Deogaonkar, Akash Mane"
-        assert page["links"][0]["label"] == "GitHub"
-        assert project_id in [p["project_id"] for p in rao.get("/api/review").json()["waiting"]]
+    assert sent.json()["faculty"] == "Prof. S. Rao"
+    assert len(list(files_here.rglob("*.pdf"))) == 1 and len(list(files_here.rglob("*.pptx"))) == 1
+    page = rohan.get(f"/api/projects/{project_id}").json()
+    assert page["status"] == "submitted" and page["members"] == "Rohan Deogaonkar, Akash Mane"
+    assert page["purpose"] == "Test submission" and page["class_name"] == "TY ECE Div T"
+    assert page["links"][0]["label"] == "GitHub"
+    assert project_id in [p["project_id"] for p in rao.get("/api/review").json()["waiting"]]
+    assert rohan.get(f"/api/s/{code}").json()["my_project"] == project_id
 
-        # Approved and graded in one step by the faculty member it was sent to.
-        decided = rao.post(f"/api/projects/{project_id}/decision", json={"status": "approved", "marks": 30})
-        assert decided.status_code == 200, decided.text
-        page = rohan.get(f"/api/projects/{project_id}").json()
-        assert page["status"] == "approved" and page["marks"] == 30 and page["decided_at"]
-    finally:
-        delete_project(project_id)
+    again = rohan.post("/api/submissions", data=submission(code, title="Hostel Laundry Booking Again", teammates=""),
+                       files={"report": ("r.pdf", PDF, "application/pdf")})
+    assert again.status_code == 400 and "already has a project" in again.json()["detail"]
+
+    assert rao.post(f"/api/projects/{project_id}/decision", json={"status": "approved"}).status_code == 200
+    page = rao.get(f"/api/projects/{project_id}").json()
+    graded = rao.put(f"/api/marks/{project_id}", json={"marks": [
+        {"user_id": st["user_id"], "marks": m} for st, m in zip(page["students"], (31, 26))]})
+    assert graded.json()["team_score"] == 28.5
+
+    link = rao.get(f"/api/links/{link_id}").json()
+    assert link["approved"] == 1 and link["graded"] == 1 and link["students"] == 2
+    assert [st["marks"] for st in link["projects"][0]["students"]] == [31, 26]
+    sheet = rao.get(f"/api/links/{link_id}/marks.csv")
+    assert sheet.headers["content-type"].startswith("text/csv")
+    assert "attachment" in sheet.headers["content-disposition"]
+    lines = sheet.content.decode("utf-8-sig").splitlines()
+    assert lines[0] == "PRN,Student,Project,Status,Marks,Team score,Out of"
+    assert lines[1] == "1032240101,Rohan Deogaonkar,Hostel Laundry Slot Booking,approved,31,28.5,33"
+    assert lines[2] == "1032240102,Akash Mane,Hostel Laundry Slot Booking,approved,26,28.5,33"
 
 
-def test_a_submission_needs_a_pdf_report(accounts, files_here):
+def test_a_closed_or_unknown_link_takes_no_projects(accounts, files_here, rao_link):
+    rao, rohan = client_as(accounts["faculty"]), client_as(accounts["student"])
+    change = {"class_name": "TY ECE Div T", "purpose": "Test submission", "max_marks": 33, "is_open": False}
+    assert rao.put(f"/api/links/{rao_link['submission_link_id']}", json=change).status_code == 200
+    report = {"report": ("report.pdf", PDF, "application/pdf")}
+    closed = rohan.post("/api/submissions", data=submission(rao_link["code"]), files=report)
+    assert closed.status_code == 422 and "closed" in closed.json()["detail"]
+    unknown = rohan.post("/api/submissions", data=submission("0000000000aa"), files=report)
+    assert unknown.status_code == 404
+    assert not list(files_here.rglob("*"))                                  # nothing uploaded for either
+    assert rohan.get("/api/s/0000000000aa").status_code == 404
+    assert rohan.get("/api/s/not-a-code!").status_code == 422
+
+
+def test_students_see_a_links_approved_projects_and_their_own(accounts):
+    cctv = find(accounts["student"], "Automatic Classroom Attendance from CCTV Footage")   # waiting, in Prof. Rao's link
+    with psycopg.connect(require("ADMIN_DATABASE_URL")) as conn:
+        code = conn.execute("SELECT code FROM pbl.submission_links WHERE submission_link_id = %s",
+                            (cctv["submission_link_id"],)).fetchone()[0]
+    own = client_as(accounts["student"]).get(f"/api/s/{code}").json()
+    assert own["faculty"] == "Prof. S. Rao" and own["is_open"] and own["my_project"] == cctv["project_id"]
+    other = client_as(accounts["akash"]).get(f"/api/s/{code}").json()
+    assert other["my_project"] is None and other["waiting"] >= 1
+    assert all(p["status"] == "approved" for p in other["projects"])         # waiting projects stay private
+    assert client_as(accounts["faculty"]).get(f"/api/s/{code}").json()["is_owner"] is True
+
+
+def test_faculty_see_and_change_only_their_own_links(accounts, rao_link):
+    iyer = client_as(accounts["iyer"])
+    link_id = rao_link["submission_link_id"]
+    assert iyer.get(f"/api/links/{link_id}").status_code == 404
+    assert iyer.get(f"/api/links/{link_id}/marks.csv").status_code == 404
+    change = {"class_name": "Taken over", "purpose": "Test submission", "max_marks": 33, "is_open": True}
+    assert iyer.put(f"/api/links/{link_id}", json=change).status_code == 404
+    assert link_id not in [link["submission_link_id"] for link in iyer.get("/api/links").json()["links"]]
+    duplicate = client_as(accounts["faculty"]).post("/api/links", json={
+        "subject_id": 1, "class_name": "ty ece div t", "purpose": "TEST SUBMISSION"})
+    assert duplicate.status_code == 400                                     # same class and purpose, any case
+
+
+def test_a_new_link_starts_with_the_subjects_maximum(accounts, rao_link):
+    link = client_as(accounts["faculty"]).get(f"/api/links/{rao_link['submission_link_id']}").json()
+    assert link["max_marks"] == 33 and link["is_open"] and len(link["code"]) == 12
+
+
+def test_exported_cells_cannot_run_as_formulas():
+    from api.staff_routes import _cell
+    assert _cell("=HYPERLINK(\"http://x\")") == "'=HYPERLINK(\"http://x\")"
+    assert _cell("@SUM(A1)") == "'@SUM(A1)" and _cell("Plain title") == "Plain title"
+    assert _cell(27.5) == "27.5" and _cell(31.0) == "31" and _cell(None) == ""
+
+
+def test_a_submission_needs_a_pdf_report(accounts, files_here, rao_link):
     rohan = client_as(accounts["student"])
-    form = submission(faculty_id=str(accounts["faculty"].user_id))
+    form = submission(rao_link["code"])
     missing = rohan.post("/api/submissions", data=form, files={"ppt": ("slides.pptx", b"PK", "application/octet-stream")})
     assert missing.status_code == 422
     word = rohan.post("/api/submissions", data=form, files={"report": ("report.docx", b"PK", "application/octet-stream")})
@@ -210,16 +304,16 @@ def test_a_submission_needs_a_pdf_report(accounts, files_here):
     assert not list(files_here.rglob("*"))
 
 
-def test_only_students_submit(accounts, files_here):
+def test_only_students_submit(accounts, files_here, rao_link):
     response = client_as(accounts["faculty"]).post(
-        "/api/submissions", data=submission(faculty_id=str(accounts["faculty"].user_id)),
+        "/api/submissions", data=submission(rao_link["code"]),
         files={"report": ("report.pdf", PDF, "application/pdf")})
     assert response.status_code == 403
 
 
-def test_a_failed_submission_leaves_no_files_behind(accounts, files_here):
+def test_a_failed_submission_leaves_no_files_behind(accounts, files_here, rao_link):
     response = client_as(accounts["student"]).post(
-        "/api/submissions", data=submission(faculty_id=str(accounts["faculty"].user_id), teammates="9999999999"),
+        "/api/submissions", data=submission(rao_link["code"], teammates="9999999999"),
         files={"report": ("report.pdf", PDF, "application/pdf")})
     assert response.status_code == 400 and "9999999999" in response.json()["detail"]
     assert not list(files_here.rglob("*.pdf"))

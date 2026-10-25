@@ -32,13 +32,31 @@ def set_embedding(conn: psycopg.Connection, project: int, vector: list[float]) -
     conn.execute("UPDATE pbl.projects SET embedding = %s WHERE project_id = %s", (vector, project))
 
 
-def new_project(conn: psycopg.Connection, title: str, subject: str, year: str, status: str = "submitted") -> int:
+def new_link(conn: psycopg.Connection, subject: str, year: str, purpose: str,
+             faculty: str = "akulkarni@mitwpu.edu.in", max_marks: float | None = None) -> int:
+    """A submission link of its own, so tests don't run into the one-project-per-link rule."""
     return conn.execute(
-        """INSERT INTO pbl.projects (title, abstract, subject_id, faculty_id, academic_year, project_type, status, decided_at)
-           SELECT %s, 'A test project used only inside one test transaction.', subject_id,
-                  (SELECT user_id FROM pbl.users WHERE email = 'akulkarni@mitwpu.edu.in'), %s, 'software', %s,
-                  CASE WHEN %s = 'submitted' THEN NULL ELSE now() END
+        """INSERT INTO pbl.submission_links (faculty_id, subject_id, academic_year, class_name, purpose, max_marks)
+           SELECT (SELECT user_id FROM pbl.users WHERE email = %s), subject_id, %s, 'Test class', %s, %s
            FROM pbl.subjects WHERE code = %s
+           RETURNING submission_link_id""",
+        (faculty, year, purpose, max_marks, subject),
+    ).fetchone()["submission_link_id"]
+
+
+def new_project(conn: psycopg.Connection, title: str, subject: str, year: str, status: str = "submitted",
+                link: int | None = None) -> int:
+    return conn.execute(
+        """INSERT INTO pbl.projects (submission_link_id, title, abstract, project_type, status, decided_at)
+           VALUES (%s, %s, 'A test project used only inside one test transaction.', 'software', %s,
+                   CASE WHEN %s = 'submitted' THEN NULL ELSE now() END)
            RETURNING project_id""",
-        (title, year, status, status, subject),
+        (link or new_link(conn, subject, year, f"Test: {title}"), title, status, status),
     ).fetchone()["project_id"]
+
+
+def link_code(conn: psycopg.Connection, project: int) -> str:
+    """The code of the submission link a project came in through."""
+    return conn.execute(
+        """SELECT l.code FROM pbl.submission_links l JOIN pbl.projects p USING (submission_link_id)
+           WHERE p.project_id = %s""", (project,)).fetchone()["code"]

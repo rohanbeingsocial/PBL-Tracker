@@ -1,5 +1,5 @@
 """The business rules from 01_tables.sql and 04_triggers.sql, run as the table owner."""
-from tests.helpers import error_of, new_project, project_id, set_embedding, unit_vector, user_id
+from tests.helpers import error_of, new_link, new_project, project_id, set_embedding, unit_vector, user_id
 
 ROHAN, OM, YASH = "1032240101", "1032230011", "1032230013"
 KULKARNI = "akulkarni@mitwpu.edu.in"
@@ -8,6 +8,11 @@ KULKARNI = "akulkarni@mitwpu.edu.in"
 def add_member(conn, project, login):
     conn.execute("INSERT INTO pbl.project_members (project_id, user_id) VALUES (%s, %s)",
                  (project, user_id(conn, login)))
+
+
+def give_marks(conn, project, login, marks):
+    conn.execute("UPDATE pbl.project_members SET marks = %s WHERE project_id = %s AND user_id = %s",
+                 (marks, project, user_id(conn, login)))
 
 
 def test_a_team_can_have_any_number_of_members(db):
@@ -23,6 +28,18 @@ def test_a_student_can_be_in_several_projects_in_one_year(db):
         add_member(db, new_project(db, title, "DBMS-PBL", "2026-27"), ROHAN)
 
 
+def test_one_live_project_per_student_per_link(db):
+    link = new_link(db, "DBMS-PBL", "2026-27", "LCA 1")
+    first = new_project(db, "Hostel Complaint Tracker", "DBMS-PBL", "2026-27", link=link)
+    second = new_project(db, "Hostel Room Swap Board", "DBMS-PBL", "2026-27", link=link)
+    add_member(db, first, ROHAN)
+    err = error_of(db, "INSERT INTO pbl.project_members (project_id, user_id) VALUES (%s, %s)", (second, user_id(db, ROHAN)))
+    assert err.diag.message_primary == f"PRN {ROHAN} already has a project in this submission link"
+    set_embedding(db, first, unit_vector(12))
+    db.execute("UPDATE pbl.projects SET status = 'rejected' WHERE project_id = %s", (first,))
+    add_member(db, second, ROHAN)                    # a rejected project doesn't count
+
+
 def test_only_students_can_be_team_members(db):
     lab = project_id(db, "ECE Lab Component Tracker")
     err = error_of(db, "INSERT INTO pbl.project_members (project_id, user_id) VALUES (%s, %s)",
@@ -36,31 +53,58 @@ def test_one_leader_per_team(db):
     assert err.diag.constraint_name == "project_members_one_leader"
 
 
-def test_assigned_faculty_must_be_faculty(db):
-    lab = project_id(db, "ECE Lab Component Tracker")
-    err = error_of(db, "UPDATE pbl.projects SET faculty_id = %s WHERE project_id = %s", (user_id(db, OM), lab))
-    assert err.diag.message_primary == "The assigned faculty member has to be a faculty user"
+def test_a_submission_link_belongs_to_a_faculty_member(db):
+    err = error_of(db, "UPDATE pbl.submission_links SET faculty_id = %s WHERE submission_link_id = %s",
+                   (user_id(db, OM), new_link(db, "DBMS-PBL", "2026-27", "LCA 1")))
+    assert err.diag.message_primary == "A submission link has to belong to a faculty user"
 
 
-def test_marks_cannot_go_above_the_subjects_maximum(db):
-    lab = project_id(db, "ECE Lab Component Tracker")           # DBMS-PBL, out of 33
-    err = error_of(db, "UPDATE pbl.projects SET marks = 33.5 WHERE project_id = %s", (lab,))
-    assert err.diag.message_primary == "Marks 33.5 are more than the maximum 33.0 for this subject"
-    db.execute("UPDATE pbl.projects SET marks = 33 WHERE project_id = %s", (lab,))
+def test_link_codes_are_random_and_unique(db):
+    codes = [db.execute("SELECT code FROM pbl.submission_links WHERE submission_link_id = %s",
+                        (new_link(db, "DBMS-PBL", "2026-27", f"LCA {n}"),)).fetchone()["code"] for n in range(3)]
+    assert len(set(codes)) == 3 and all(len(c) == 12 for c in codes)
+    err = error_of(db, "INSERT INTO pbl.submission_links (faculty_id, subject_id, academic_year, class_name, purpose) "
+                       "SELECT faculty_id, subject_id, academic_year, class_name, purpose FROM pbl.submission_links LIMIT 1")
+    assert err.diag.constraint_name == "submission_links_once"
 
 
-def test_each_subject_has_its_own_maximum(db):
-    theory = new_project(db, "Packet Loss Visualiser", "CN-TH", "2026-27", status="approved")   # out of 5
-    err = error_of(db, "UPDATE pbl.projects SET marks = 6 WHERE project_id = %s", (theory,))
-    assert "maximum 5.0" in err.diag.message_primary
-    db.execute("UPDATE pbl.projects SET marks = 4.5 WHERE project_id = %s", (theory,))
-    assert error_of(db, "UPDATE pbl.projects SET marks = -1 WHERE project_id = %s", (theory,)).sqlstate == "23514"
+def test_each_students_marks_stay_within_the_links_maximum(db):
+    lab = project_id(db, "ECE Lab Component Tracker")           # DBMS-PBL link, out of 33
+    err = error_of(db, "UPDATE pbl.project_members SET marks = 33.5 WHERE project_id = %s", (lab,))
+    assert err.diag.message_primary == "Marks 33.5 are more than the maximum 33.0 for this submission"
+    give_marks(db, lab, OM, 33)
+    assert error_of(db, "UPDATE pbl.project_members SET marks = -1 WHERE project_id = %s", (lab,)).sqlstate == "23514"
+
+
+def test_a_link_starts_with_its_subjects_maximum_and_can_change_it(db):
+    link = new_link(db, "CN-TH", "2026-27", "Mini project")                  # CN-TH is out of 5
+    assert db.execute("SELECT max_marks FROM pbl.submission_links WHERE submission_link_id = %s",
+                      (link,)).fetchone()["max_marks"] == 5
+    theory = new_project(db, "Packet Loss Visualiser", "CN-TH", "2026-27", status="approved", link=link)
+    add_member(db, theory, ROHAN)
+    assert "maximum 5.0" in error_of(db, "UPDATE pbl.project_members SET marks = 6 WHERE project_id = %s",
+                                     (theory,)).diag.message_primary
+    db.execute("UPDATE pbl.submission_links SET max_marks = 10 WHERE submission_link_id = %s", (link,))
+    give_marks(db, theory, ROHAN, 6)
+    err = error_of(db, "UPDATE pbl.submission_links SET max_marks = 5 WHERE submission_link_id = %s", (link,))
+    assert err.diag.message_primary.startswith("A student in this link already has 6.0 marks")
 
 
 def test_only_approved_projects_can_be_marked(db):
     mess = project_id(db, "Mess Meal Pre-Booking and Feedback")              # still waiting for review
-    err = error_of(db, "UPDATE pbl.projects SET marks = 10 WHERE project_id = %s", (mess,))
+    err = error_of(db, "UPDATE pbl.project_members SET marks = 10 WHERE project_id = %s", (mess,))
     assert err.diag.message_primary == "Only approved projects can be marked (this one is submitted)"
+
+
+def test_team_score_is_the_average_once_everyone_has_marks(db):
+    lab = project_id(db, "ECE Lab Component Tracker")           # Om and Neha
+    db.execute("UPDATE pbl.project_members SET marks = NULL WHERE project_id = %s", (lab,))
+    score = "SELECT graded, team_score, percent FROM pbl.team_marks WHERE project_id = %s"
+    give_marks(db, lab, OM, 30)
+    assert db.execute(score, (lab,)).fetchone() == {"graded": 1, "team_score": None, "percent": None}
+    db.execute("UPDATE pbl.project_members SET marks = 25 WHERE project_id = %s AND user_id <> %s", (lab, user_id(db, OM)))
+    row = db.execute(score, (lab,)).fetchone()
+    assert row["graded"] == 2 and float(row["team_score"]) == 27.5 and float(row["percent"]) == 83.3
 
 
 def test_accounts_need_a_college_email(db):
@@ -70,8 +114,8 @@ def test_accounts_need_a_college_email(db):
 
 
 def test_academic_year_format_and_sequence(db):
-    insert = """INSERT INTO pbl.projects (title, abstract, subject_id, faculty_id, academic_year, project_type)
-                VALUES ('Year check project', 'Only here to test the academic year constraints.', 1, %s, %s, 'software')"""
+    insert = """INSERT INTO pbl.submission_links (faculty_id, subject_id, academic_year, class_name, purpose)
+                VALUES (%s, 1, %s, 'TY ECE Div A', 'Year check')"""
     faculty = user_id(db, KULKARNI)
     assert error_of(db, insert, (faculty, "2026")).diag.constraint_name == "academic_year_format"
     assert error_of(db, insert, (faculty, "2026-28")).diag.constraint_name == "academic_year_sequence"
@@ -213,3 +257,4 @@ def test_project_cards_has_one_row_per_project(db):
     assert counts["cards"] == counts["projects"]
     lab = db.execute("SELECT * FROM pbl.project_cards WHERE title = 'ECE Lab Component Tracker'").fetchone()
     assert lab["members"] == "Om Pawar, Neha Karve" and lab["subject"] == "DBMS-PBL"
+    assert lab["purpose"] == "Semester PBL" and lab["class_name"].startswith("TY ECE Div")
