@@ -60,11 +60,12 @@ CREATE TABLE subjects (
 );
 
 -- A faculty member opens a submission link for one class: the subject, the class
--- (course, year, division), what the submission is for ('Semester PBL', 'LCA 1') and
--- what each student's marks are out of. Students open the link, sign in with their
--- college account and submit there, so every project counts towards exactly one
--- class's submission. The code is the random part of the URL (/s/<code>); it is
--- made here, never by the app, so nobody can pick an easy one to guess.
+-- (course, year, division), what the submission is for ('Semester PBL', 'LCA 1'),
+-- what each student's marks are out of and how many students a team can have.
+-- Students open the link, sign in with their college account and submit there, so
+-- every project counts towards exactly one class's submission. The code is the random
+-- part of the URL (/s/<code>); it is made here, never by the app, so nobody can pick
+-- an easy one to guess.
 CREATE TABLE submission_links (
     submission_link_id  INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     code                VARCHAR(16)  NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(6), 'hex')
@@ -75,13 +76,16 @@ CREATE TABLE submission_links (
     class_name          VARCHAR(80)  NOT NULL CHECK (length(btrim(class_name)) >= 2),   -- 'TY ECE Div A'
     purpose             VARCHAR(100) NOT NULL CHECK (length(btrim(purpose)) >= 2),      -- 'Semester PBL'
     max_marks           NUMERIC(5,1) NOT NULL CHECK (max_marks > 0),       -- the subject's, if not given (trigger)
+    min_members         SMALLINT     NOT NULL DEFAULT 1 CHECK (min_members >= 1),   -- students per team, leader included
+    max_members         SMALLINT,                                          -- NULL: no upper limit
     is_open             BOOLEAN      NOT NULL DEFAULT true,                -- a closed link takes no new projects
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
 
     -- Postgres tests CHECK constraints in alphabetical order of their names, so the
     -- format check always runs before the ::int casts in the sequence check.
     CONSTRAINT academic_year_format   CHECK (academic_year ~ '^20[0-9]{2}-[0-9]{2}$'),
-    CONSTRAINT academic_year_sequence CHECK (right(academic_year, 2)::int = (left(academic_year, 4)::int + 1) % 100)
+    CONSTRAINT academic_year_sequence CHECK (right(academic_year, 2)::int = (left(academic_year, 4)::int + 1) % 100),
+    CONSTRAINT team_size_range        CHECK (max_members >= min_members)
 );
 
 -- A team submits its finished project, report included, through one submission
@@ -109,8 +113,9 @@ CREATE TABLE projects (
     CONSTRAINT decided_after_submit   CHECK (decided_at >= created_at)
 );
 
--- A team can have any number of students, and a student can be in several projects
--- in the same year, but only one live project per submission link (trigger; a
+-- A team has as many students as its link allows (min_members to max_members:
+-- submit_project() and a trigger), and a student can be in several projects in the
+-- same year, but only one live project per submission link (trigger; a
 -- rejected one doesn't count, so the team can submit again). Each student gets their
 -- own marks, from 0 to the link's max_marks, once the project is approved (trigger);
 -- the team score is the average (team_marks view). Deleting a project removes its

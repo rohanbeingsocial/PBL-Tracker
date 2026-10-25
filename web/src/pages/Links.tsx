@@ -31,6 +31,15 @@ export function splitClass(name: string): ClassParts {
   return m ? { year: m[1], branch: m[2], division: m[3] ?? "" } : { year: name, branch: "", division: "" };
 }
 
+// The two team size boxes: empty means 1 for the fewest and no limit for the most.
+export function readTeam(fewest: string, most: string): { min_members: number; max_members: number | null } | string {
+  const min = fewest.trim() === "" ? 1 : Number(fewest);
+  const max = most.trim() === "" ? null : Number(most);
+  if (![min, max ?? 1].every((n) => Number.isInteger(n) && n >= 1 && n <= 12)) return "A team can have 1 to 12 students.";
+  if (max !== null && max < min) return "The most students in a team can't be fewer than the fewest.";
+  return { min_members: min, max_members: max };
+}
+
 export function OpenTag({ open }: { open: boolean }) {
   return <span className={`status ${open ? "approved" : "rejected"}`}>{open ? "Open" : "Closed"}</span>;
 }
@@ -41,6 +50,8 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
   const [cls, setCls] = useState<ClassParts>({ year: "", branch: "", division: "" });
   const [purpose, setPurpose] = useState("");
   const [max, setMax] = useState("");
+  const [fewest, setFewest] = useState("");
+  const [most, setMost] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const chosen = ref.subjects.find((s) => s.subject_id === subject);
@@ -53,11 +64,13 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
     if (!cls.branch.trim()) return setError("Write the branch, for example ECE.");
     if (purpose.trim().length < 2) return setError("Write what the submission is for, for example Semester PBL.");
     if (maxMarks !== null && !(maxMarks > 0)) return setError("Marks out of has to be more than 0.");
+    const team = readTeam(fewest, most);
+    if (typeof team === "string") return setError(team);
     setBusy(true);
     setError(null);
     try {
       const made = await api<{ submission_link_id: number }>("/links", {
-        body: { subject_id: subject, class_name: joinClass(cls), purpose: purpose.trim(), max_marks: maxMarks },
+        body: { subject_id: subject, class_name: joinClass(cls), purpose: purpose.trim(), max_marks: maxMarks, ...team },
       });
       onMade(made.submission_link_id);
     } catch (err) {
@@ -100,6 +113,18 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
           <input className="input" value={cls.division} maxLength={10} placeholder="A"
                  onChange={(e) => setCls({ ...cls, division: e.target.value })} />
           <small>Leave it empty if the class has no divisions.</small>
+        </label>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
+        <label className="field"><span>Fewest students in a team</span>
+          <input className="input" type="number" min={1} max={12} step={1} value={fewest} placeholder="1"
+                 onChange={(e) => setFewest(e.target.value)} />
+          <small>The team leader counts too.</small>
+        </label>
+        <label className="field"><span>Most students in a team</span>
+          <input className="input" type="number" min={1} max={12} step={1} value={most} placeholder="No limit"
+                 onChange={(e) => setMost(e.target.value)} />
+          <small>Leave it empty for no limit.</small>
         </label>
       </div>
       <div className="row" style={{ gap: 12 }}>

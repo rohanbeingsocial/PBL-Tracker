@@ -242,7 +242,8 @@ def test_submitting_through_a_link_then_approving_grading_and_exporting(accounts
 
 def test_a_closed_or_unknown_link_takes_no_projects(accounts, files_here, rao_link):
     rao, rohan = client_as(accounts["faculty"]), client_as(accounts["student"])
-    change = {"class_name": "TY ECE Div T", "purpose": "Test submission", "max_marks": 33, "is_open": False}
+    change = {"class_name": "TY ECE Div T", "purpose": "Test submission", "max_marks": 33,
+              "min_members": 1, "max_members": None, "is_open": False}
     assert rao.put(f"/api/links/{rao_link['submission_link_id']}", json=change).status_code == 200
     report = {"report": ("report.pdf", PDF, "application/pdf")}
     closed = rohan.post("/api/submissions", data=submission(rao_link["code"]), files=report)
@@ -272,7 +273,8 @@ def test_faculty_see_and_change_only_their_own_links(accounts, rao_link):
     link_id = rao_link["submission_link_id"]
     assert iyer.get(f"/api/links/{link_id}").status_code == 404
     assert iyer.get(f"/api/links/{link_id}/marks.csv").status_code == 404
-    change = {"class_name": "Taken over", "purpose": "Test submission", "max_marks": 33, "is_open": True}
+    change = {"class_name": "Taken over", "purpose": "Test submission", "max_marks": 33,
+              "min_members": 1, "max_members": None, "is_open": True}
     assert iyer.put(f"/api/links/{link_id}", json=change).status_code == 404
     assert link_id not in [link["submission_link_id"] for link in iyer.get("/api/links").json()["links"]]
     duplicate = client_as(accounts["faculty"]).post("/api/links", json={
@@ -283,6 +285,26 @@ def test_faculty_see_and_change_only_their_own_links(accounts, rao_link):
 def test_a_new_link_starts_with_the_subjects_maximum(accounts, rao_link):
     link = client_as(accounts["faculty"]).get(f"/api/links/{rao_link['submission_link_id']}").json()
     assert link["max_marks"] == 33 and link["is_open"] and len(link["code"]) == 12
+    assert link["min_members"] == 1 and link["max_members"] is None        # any team size until the faculty sets one
+
+
+def test_faculty_set_the_team_size_and_other_teams_are_refused(accounts, files_here, rao_link):
+    rao, rohan = client_as(accounts["faculty"]), client_as(accounts["student"])
+    path = f"/api/links/{rao_link['submission_link_id']}"
+    change = {"class_name": "TY ECE Div T", "purpose": "Test submission", "max_marks": 33, "is_open": True}
+    assert rao.put(path, json=change).status_code == 422                    # leaving the sizes out can't lift a limit
+    backwards = rao.put(path, json={**change, "min_members": 3, "max_members": 2})
+    assert backwards.status_code == 422 and "can't be fewer than the fewest" in backwards.json()["detail"]
+    assert rao.put(path, json={**change, "min_members": 3, "max_members": 4}).status_code == 200
+    assert rohan.get(f"/api/s/{rao_link['code']}").json()["min_members"] == 3
+    report = {"report": ("report.pdf", PDF, "application/pdf")}
+    pair = rohan.post("/api/submissions", data=submission(rao_link["code"]), files=report)   # Rohan and Krishna
+    assert pair.status_code == 422
+    assert pair.json()["detail"] == "This submission link takes teams of 3 to 4 students; yours has 2."
+    assert not list(files_here.rglob("*"))                                  # refused before any file was stored
+    made = rao.post("/api/links", json={"subject_id": 1, "class_name": "TY ECE Div T", "purpose": "Pairs",
+                                        "min_members": 2, "max_members": 1})
+    assert made.status_code == 422
 
 
 def test_exported_cells_cannot_run_as_formulas():

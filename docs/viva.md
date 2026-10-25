@@ -24,8 +24,8 @@ and a .pptx on the desktop for steps 4 and 5.
    never says "heart". Then filter by subject IOT-PBL, type hardware, tag ESP32.
 3. **A submission link (1 min).** Sign in as `srao@mitwpu.edu.in`. Submission links: the
    ML-PBL link for TY ECE Div B is there, with Rohan's team's project waiting. Make a new
-   one: ML-PBL, class *TY ECE Div A*, for *LCA 2*, each student out of 10. Its page shows
-   the URL with a random code; press Copy link.
+   one: ML-PBL, class *TY ECE Div A*, for *LCA 2*, each student out of 10, teams of 2 to 4
+   students. Its page shows the URL with a random code; press Copy link.
 4. **Submit through the link (1 min).** Switch to student `1262241766` (Krishna Bhand) and
    open the copied link. The page says who it is for and lists the class's projects.
    Title *Attendance from classroom CCTV*, abstract *Recognise student faces from the CCTV
@@ -85,11 +85,14 @@ The column's default is `encode(gen_random_bytes(6), 'hex')`: 12 hex characters,
 281 trillion possibilities. `pbl_app` has no INSERT or UPDATE rights on `code`, so the
 app can never pick an easy one. A code also only opens a page after a college sign-in.
 
-**Why isn't team size limited? Why can a student be in many projects?**
-Because that is how PBL works here. Teams range from 2 to 5, and each student does
-around 5 PBLs a semester, one per subject. The database enforces the rules that are
-really rules (only students in a team, one leader, one live project per student in each
-submission link) and doesn't invent others.
+**Who decides the team size? Why can a student be in many projects?**
+The faculty member, on each submission link: the fewest and the most students in a team,
+or any size if both are left empty. Teams here are usually 2 to 5, but that differs by
+subject. The `check_member` trigger refuses one student too many, `submit_project()`
+refuses a team that is too small, and a limit that a team already in the link doesn't
+fit is refused. A student does around 5 PBLs a semester, one per subject, so the
+database doesn't limit projects per student; it only allows one live project per
+student in each submission link.
 
 **How do you stop a student submitting twice through the same link?**
 The `check_member` trigger refuses a student who already has a project in that link

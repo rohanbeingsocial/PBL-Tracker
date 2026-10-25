@@ -3,7 +3,8 @@ BEGIN
 SET LOCAL search_path = pbl, extensions;
 SET
 
-=== 1. Teams have no fixed size. ECE Lab Component Tracker has 2 members; add 3 more.
+=== 1. The faculty member decides how many students a team has. ECE Lab Component Tracker's
+        link takes any size, so its team of 2 can grow to 5.
 INSERT INTO project_members (project_id, user_id)
 SELECT p.project_id, u.user_id
 FROM projects p, users u
@@ -16,13 +17,28 @@ SELECT title, members FROM project_cards WHERE title = 'ECE Lab Component Tracke
  ECE Lab Component Tracker | Om Pawar, Krishna Bhand, Neha Karve, Siddhi Ranade, Snehal Nikam
 
 
+        Now the link takes teams of 2 to 5: a sixth student is refused, and so is lowering the limit to 4.
+UPDATE submission_links SET min_members = 2, max_members = 5
+WHERE submission_link_id = (SELECT submission_link_id FROM projects WHERE title = 'ECE Lab Component Tracker');
+UPDATE 1
+INSERT INTO project_members (project_id, user_id)
+SELECT p.project_id, u.user_id
+FROM projects p, users u
+WHERE p.title = 'ECE Lab Component Tracker' AND u.prn = '1032240105';
+ERROR:  This submission link takes teams of at most 5 students
+CONTEXT:  PL/pgSQL function trg_check_member() line 41 at RAISE
+UPDATE submission_links SET max_members = 4
+WHERE submission_link_id = (SELECT submission_link_id FROM projects WHERE title = 'ECE Lab Component Tracker');
+ERROR:  A team in this link already has 5 students, so the most in a team can't go below that
+CONTEXT:  PL/pgSQL function trg_check_submission_link() line 37 at RAISE
+
 === 2. Only students can be team members.
 INSERT INTO project_members (project_id, user_id)
 SELECT p.project_id, u.user_id
 FROM projects p, users u
 WHERE p.title = 'ECE Lab Component Tracker' AND u.email = 'akulkarni@mitwpu.edu.in';
 ERROR:  Only students can be team members
-CONTEXT:  PL/pgSQL function trg_check_member() line 12 at RAISE
+CONTEXT:  PL/pgSQL function trg_check_member() line 14 at RAISE
 
 === 3. Projects come in through submission links. A faculty member makes one per class and
         purpose and sends it to the students; subject, faculty member and year come from the link.
@@ -44,7 +60,7 @@ UPDATE submission_links SET faculty_id = (SELECT user_id FROM users WHERE prn = 
 WHERE submission_link_id = (SELECT submission_link_id FROM projects
                             WHERE title = 'Automatic Classroom Attendance from CCTV Footage');
 ERROR:  A submission link has to belong to a faculty user
-CONTEXT:  PL/pgSQL function trg_check_submission_link() line 7 at RAISE
+CONTEXT:  PL/pgSQL function trg_check_submission_link() line 9 at RAISE
 SELECT submit_project(
     (SELECT user_id FROM users WHERE prn = '1262241783'),
     'Second try at CCTV attendance',
@@ -54,17 +70,17 @@ SELECT submit_project(
     ARRAY['1032240115'], 'software', ARRAY['Python'], ARRAY[]::text[], ARRAY[]::text[], NULL,
     'report.pdf', 'demo/report.pdf', 1000);
 ERROR:  PRN 1262241783 already has a project in this submission link
-CONTEXT:  PL/pgSQL function trg_check_member() line 25 at RAISE
+CONTEXT:  PL/pgSQL function trg_check_member() line 27 at RAISE
 SQL statement "INSERT INTO project_members (project_id, user_id, is_leader)
     VALUES (v_project_id, p_leader_id, true)"
-PL/pgSQL function submit_project(integer,text,text,text,text[],text,text[],text[],text[],double precision[],text,text,integer,text,text,integer) line 48 at SQL statement
+PL/pgSQL function submit_project(integer,text,text,text,text[],text,text[],text[],text[],double precision[],text,text,integer,text,text,integer) line 64 at SQL statement
 
 === 5. Each student gets their own marks, up to the link's maximum (here 33).
         The team score is the average, once every member has marks.
 UPDATE project_members SET marks = 33.5
 WHERE project_id = (SELECT project_id FROM projects WHERE title = 'ECE Lab Component Tracker');
 ERROR:  Marks 33.5 are more than the maximum 33.0 for this submission
-CONTEXT:  PL/pgSQL function trg_check_member() line 38 at RAISE
+CONTEXT:  PL/pgSQL function trg_check_member() line 54 at RAISE
 UPDATE project_members SET marks = 30
 WHERE project_id = (SELECT project_id FROM projects WHERE title = 'ECE Lab Component Tracker')
   AND is_leader;
@@ -96,31 +112,31 @@ WHERE u.email = 'akulkarni@mitwpu.edu.in' AND s.code = 'CN-TH'
 RETURNING class_name, purpose, max_marks, code;
   class_name  |   purpose    | max_marks |     code     
 --------------+--------------+-----------+--------------
- TY ECE Div A | Mini project |       5.0 | 1ce5576b4662
+ TY ECE Div A | Mini project |       5.0 | 1aa38d96ed87
 
 INSERT 0 1
 UPDATE project_members SET marks = 10
 WHERE project_id = (SELECT project_id FROM projects WHERE title = 'Mess Meal Pre-Booking and Feedback');
 ERROR:  Only approved projects can be marked (this one is submitted)
-CONTEXT:  PL/pgSQL function trg_check_member() line 32 at RAISE
+CONTEXT:  PL/pgSQL function trg_check_member() line 49 at RAISE
 
 === 7. Only MIT-WPU accounts: every email has to end in @mitwpu.edu.in.
 INSERT INTO users (name, email, role, password_hash)
 VALUES ('Outsider', 'someone@gmail.com', 'faculty', '$2a$11$xxxxxxxxxxxxxxxxxxxxxx');
 ERROR:  new row for relation "users" violates check constraint "college_email"
-DETAIL:  Failing row contains (136, Outsider, someone@gmail.com, null, faculty, f, $2a$11$xxxxxxxxxxxxxxxxxxxxxx, t, 2026-10-24 14:18:26.237505+00, t, 2026-10-24 14:18:26.20237+00).
+DETAIL:  Failing row contains (138, Outsider, someone@gmail.com, null, faculty, f, $2a$11$xxxxxxxxxxxxxxxxxxxxxx, t, 2026-10-25 13:35:34.617763+00, t, 2026-10-25 13:35:34.594088+00).
 
 === 8. CHECK constraints on a link's academic year: format first, then the two years must follow each other.
 INSERT INTO submission_links (faculty_id, subject_id, academic_year, class_name, purpose)
 SELECT user_id, 1, '2026', 'TY ECE Div A', 'Year check'
 FROM users WHERE email = 'akulkarni@mitwpu.edu.in';
 ERROR:  new row for relation "submission_links" violates check constraint "academic_year_format"
-DETAIL:  Failing row contains (65, 9dbeddca4a5a, 1, 1, 2026, TY ECE Div A, Year check, 33.0, t, 2026-10-24 14:18:26.20237+00).
+DETAIL:  Failing row contains (67, b8d9e869d6a3, 1, 1, 2026, TY ECE Div A, Year check, 33.0, 1, null, t, 2026-10-25 13:35:34.594088+00).
 INSERT INTO submission_links (faculty_id, subject_id, academic_year, class_name, purpose)
 SELECT user_id, 1, '2026-28', 'TY ECE Div A', 'Year check'
 FROM users WHERE email = 'akulkarni@mitwpu.edu.in';
 ERROR:  new row for relation "submission_links" violates check constraint "academic_year_sequence"
-DETAIL:  Failing row contains (66, b11f764266e4, 1, 1, 2026-28, TY ECE Div A, Year check, 33.0, t, 2026-10-24 14:18:26.20237+00).
+DETAIL:  Failing row contains (68, 3c5332ed4c95, 1, 1, 2026-28, TY ECE Div A, Year check, 33.0, 1, null, t, 2026-10-25 13:35:34.594088+00).
 
 === 9. A submitted project is approved or rejected once, and the trigger records when.
 UPDATE projects SET status = 'submitted' WHERE title = 'College Library Management';
@@ -129,9 +145,9 @@ CONTEXT:  PL/pgSQL function trg_check_project() line 4 at RAISE
 UPDATE projects SET status = 'rejected', review_note = 'Same scope as the 2025-26 mess project.'
 WHERE title = 'Mess Meal Pre-Booking and Feedback'
 RETURNING title, status, decided_at;
-               title                |  status  |          decided_at          
-------------------------------------+----------+------------------------------
- Mess Meal Pre-Booking and Feedback | rejected | 2026-10-24 14:18:26.20237+00
+               title                |  status  |          decided_at           
+------------------------------------+----------+-------------------------------
+ Mess Meal Pre-Booking and Feedback | rejected | 2026-10-25 13:35:34.594088+00
 
 UPDATE 1
 
@@ -145,7 +161,7 @@ DETAIL:  Key (project_id, kind)=(60, report) already exists.
 UPDATE project_files SET storage_path = 'demo/report.docx'
 WHERE kind = 'report' AND project_id = (SELECT project_id FROM projects WHERE title = 'Smart Water Tank Level Controller');
 ERROR:  new row for relation "project_files" violates check constraint "reports_are_pdf"
-DETAIL:  Failing row contains (60, 60, report, Smart Water Tank Level Controller.pdf, demo/report.docx, 1619, 115, 2026-10-24 14:17:56.006584+00).
+DETAIL:  Failing row contains (60, 60, report, Smart Water Tank Level Controller.pdf, demo/report.docx, 1619, 134, 2026-10-25 13:33:47.675848+00).
 DELETE FROM project_files
 WHERE kind = 'report' AND project_id = (SELECT project_id FROM projects WHERE title = 'Smart Water Tank Level Controller');
 ERROR:  A project's report can be replaced but not removed
@@ -155,13 +171,13 @@ CONTEXT:  PL/pgSQL function trg_keep_report() line 5 at RAISE
 INSERT INTO project_links (project_id, label, url)
 SELECT project_id, 'GitHub', 'github.com/example/tank' FROM projects WHERE title = 'Smart Water Tank Level Controller';
 ERROR:  new row for relation "project_links" violates check constraint "project_links_url_check"
-DETAIL:  Failing row contains (3, 60, GitHub, github.com/example/tank).
+DETAIL:  Failing row contains (6, 60, GitHub, github.com/example/tank).
 INSERT INTO project_links (project_id, label, url)
 SELECT project_id, 'GitHub', 'https://github.com/example/tank' FROM projects WHERE title = 'Smart Water Tank Level Controller'
 RETURNING link_id, label, url;
  link_id | label  |               url               
 ---------+--------+---------------------------------
-       4 | GitHub | https://github.com/example/tank
+       7 | GitHub | https://github.com/example/tank
 
 INSERT 0 1
 

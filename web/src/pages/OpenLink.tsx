@@ -1,6 +1,7 @@
 import type { ProjectType, Status } from "../api";
 import { AppLink, Failed, Loading, Notice, PageHead, StatusTag, Tags } from "../components/ui";
 import { useApp } from "../context";
+import { teamSize } from "../format";
 import { useLoad } from "../hooks";
 import { SubmitForm } from "./Submit";
 
@@ -23,6 +24,8 @@ interface OpenLinkData {
   class_name: string;
   purpose: string;
   max_marks: number;
+  min_members: number;
+  max_members: number | null;
   is_open: boolean;
   waiting: number;
   projects: ClassProject[];
@@ -61,13 +64,14 @@ export default function OpenLink({ code }: { code: string }) {
   } else if (!link.is_open) {
     top = <Notice tone="warn">This link is closed, so it takes no new projects. Ask {link.faculty} if you still need to submit.</Notice>;
   } else {
-    top = <SubmitForm code={code} faculty={link.faculty} />;
+    top = <SubmitForm code={code} faculty={link.faculty} minTeam={link.min_members} maxTeam={link.max_members} />;
   }
 
   return (
     <>
       <PageHead title={`${link.purpose} · ${link.subject}`}
-                sub={`${link.subject_name} · ${link.class_name} · ${link.faculty} · ${link.academic_year} · each student out of ${link.max_marks}`} />
+                sub={[link.subject_name, link.class_name, link.faculty, link.academic_year, `each student out of ${link.max_marks}`,
+                      teamSize(link.min_members, link.max_members)].filter(Boolean).join(" · ")} />
       <div className="stack" style={{ gap: 20 }}>
         {top}
         <div className="stack" style={{ gap: 10 }}>

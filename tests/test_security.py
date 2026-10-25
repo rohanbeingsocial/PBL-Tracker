@@ -131,6 +131,18 @@ def test_submit_project_lands_in_the_links_class_as_submitted(app_db, db):
     assert err.diag.message_primary == f"PRN {ROHAN} already has a project in this submission link"
 
 
+def test_submit_project_takes_only_the_team_sizes_the_link_allows(app_db, db):
+    code = open_link(app_db, "Pairs")
+    app_db.execute("UPDATE pbl.submission_links SET min_members = 2, max_members = 2 WHERE code = %s", (code,))
+    err = error_of(app_db, CALL, (user_id(db, ROHAN), ABSTRACT, code, [], "r.pdf", "new/1/r.pdf", 100))
+    assert err.diag.message_primary == "This submission link takes teams of 2 students; yours has 1"
+    err = error_of(app_db, CALL, (user_id(db, ROHAN), ABSTRACT, code, [KRISHNA, "1032240103"],
+                                  "r.pdf", "new/1/r.pdf", 100))
+    assert err.diag.message_primary == "This submission link takes teams of 2 students; yours has 3"
+    new_id = submit(app_db, user_id(db, ROHAN), code, prns=[KRISHNA, KRISHNA, ROHAN])   # each student counts once
+    assert app_db.execute("SELECT members FROM pbl.team_marks WHERE project_id = %s", (new_id,)).fetchone()["members"] == 2
+
+
 def test_submit_project_needs_a_pdf_report(app_db, db):
     code = open_link(app_db)
     err = error_of(app_db, CALL, (user_id(db, ROHAN), ABSTRACT, code, [], None, None, None))

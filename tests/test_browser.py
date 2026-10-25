@@ -39,6 +39,7 @@ expect.set_options(timeout=15_000)
 
 ROHAN, KRISHNA = "1262241783", "1262241766"
 TEAMMATES = "1032240105, 1032240106"
+LAUNDRY_TEAM = "1032240107, 1032240108"     # Rohan's teammates; the link takes teams of 3
 RAO, IYER, ADMIN = "srao@mitwpu.edu.in", "riyer@mitwpu.edu.in", "nshaikh@mitwpu.edu.in"
 CLASS = "TY ECE Div E2E"
 
@@ -340,12 +341,18 @@ def test_faculty_make_a_submission_link(open_as, made):
     make.click()                                    # the browser itself refuses 0
     assert out_of.evaluate("e => !e.validity.valid")
     out_of.fill("10")
+    page.get_by_label("Fewest students in a team").fill("3")
+    page.get_by_label("Most students in a team").fill("2")
+    make.click()
+    alert(page, "The most students in a team can't be fewer than the fewest.")
+    page.get_by_label("Most students in a team").fill("3")         # Krishna and the two TEAMMATES
     make.click()
     toast(page, "Link made. Copy it and send it to the class.")
     expect(page).to_have_url(re.compile(r"/links/\d+$"))
     made["link_id"] = int(page.url.rsplit("/", 1)[1])
     expect(heading(page, f"ML-PBL · {CLASS}")).to_be_visible()
-    expect(page.locator(".head p")).to_have_text(f"{made['purpose']} · {current_year(page)} · each student out of 10")
+    expect(page.locator(".head p")).to_have_text(
+        f"{made['purpose']} · {current_year(page)} · each student out of 10 · teams of 3 students")
     expect(page.get_by_text(f"Nothing submitted yet. Copy the link and send it to {CLASS}.")).to_be_visible()
 
     shown = page.locator(".mono.small.grow")
@@ -393,6 +400,8 @@ def test_a_student_submits_through_the_link(open_as, made, files):
         (lambda: page.get_by_label("Project title").fill(CCTV), "The abstract needs at least 30 characters."),
         (lambda: (page.get_by_label("Abstract").fill(CCTV_ABSTRACT), page.get_by_label("Teammates' PRNs").fill("12345")),
          "Enter each teammate's 10-digit PRN, separated by commas."),
+        (lambda: page.get_by_label("Teammates' PRNs").fill(TEAMMATES.split(", ")[0]),
+         "This submission link takes teams of 3 students; yours has 2."),
         (lambda: page.get_by_label("Teammates' PRNs").fill(TEAMMATES), "Attach the project report (PDF)."),
         (lambda: page.get_by_label("Report (PDF)").set_input_files(files["notes.txt"]), "The report has to be a PDF."),
         (lambda: (page.get_by_label("Report (PDF)").set_input_files(files["report.pdf"]),
@@ -536,15 +545,22 @@ def test_faculty_review_grade_change_close_and_export(open_as, made):
     expect(page.locator(".metric").filter(has_text="Graded")).to_contain_text("1 of 1")
 
     # Lowering the maximum below marks already given is refused; a new purpose is saved.
-    page.get_by_role("button", name="Change class, purpose or marks").click()
+    page.get_by_role("button", name="Change class, purpose, marks or team size").click()
     page.get_by_label("Each student out of").fill("5")
     page.get_by_role("button", name="Save").click()
     expect(page.get_by_role("alert")).to_be_visible()
     page.get_by_role("button", name="Cancel").click()
-    page.get_by_role("button", name="Change class, purpose or marks").click()
+    page.get_by_role("button", name="Change class, purpose, marks or team size").click()
     expect(page.get_by_label("Year of study")).to_have_value("TY")      # the class comes back in its three parts
     expect(page.get_by_label("Branch")).to_have_value("ECE")
     expect(page.get_by_label("Division")).to_have_value("E2E")
+    expect(page.get_by_label("Fewest students in a team")).to_have_value("3")
+    page.get_by_label("Fewest students in a team").fill("1")
+    page.get_by_label("Most students in a team").fill("2")
+    page.get_by_role("button", name="Save").click()
+    alert(page, "A team in this link already has 3 students")        # the approved team of three
+    page.get_by_label("Fewest students in a team").fill("3")
+    page.get_by_label("Most students in a team").fill("3")
     made["purpose"] += " renamed"
     page.get_by_label("What it is for").fill(made["purpose"])
     page.get_by_role("button", name="Save").click()
@@ -558,6 +574,7 @@ def test_faculty_review_grade_change_close_and_export(open_as, made):
     page.get_by_role("button", name="Open it again").click()
     toast(page, "The link takes projects again.")
     expect(page.locator(".card .status").first).to_have_text("Open")
+    expect(page.locator(".head p")).to_contain_text("teams of 3 students")     # closing and opening keeps the team size
 
     with page.expect_download() as download:
         page.get_by_role("link", name="Download marks").click()
@@ -575,6 +592,7 @@ def test_a_rejected_team_can_submit_again(open_as, made, files):
     title = f"Hostel Laundry Slot Booking {made['stamp']}"
     rohan.get_by_label("Project title").fill(title)
     rohan.get_by_label("Abstract").fill(LAUNDRY_ABSTRACT)
+    rohan.get_by_label("Teammates' PRNs").fill(LAUNDRY_TEAM)
     rohan.get_by_label("Report (PDF)").set_input_files(files["laundry.pdf"])
     rohan.get_by_role("button", name="Submit project").click()
     expect(rohan).to_have_url(re.compile(r"/projects/\d+$"), timeout=30_000)

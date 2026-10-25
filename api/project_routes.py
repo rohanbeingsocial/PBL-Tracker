@@ -454,11 +454,20 @@ LINK_CODE = r"^[a-z0-9]{6,16}$"
 def find_link(conn, code: str) -> dict:
     link = conn.execute(
         """SELECT submission_link_id, code, faculty_id, faculty, subject, subject_name, academic_year,
-                  class_name, purpose, max_marks::float8, is_open, waiting, approved
+                  class_name, purpose, max_marks::float8, min_members, max_members, is_open, waiting, approved
            FROM pbl.link_progress WHERE code = %s""", (code,)).fetchone()
     if link is None:
         raise HTTPException(404, "No submission link with this code. Check the link your faculty member sent.")
     return link
+
+
+def team_sizes(low: int, high: int | None) -> str:
+    """The team sizes a link takes, worded as submit_project() words them."""
+    if high is None:
+        return f"at least {low}"
+    if high == low:
+        return str(low)
+    return f"up to {high}" if low == 1 else f"{low} to {high}"
 
 
 def open_link(conn, code: str) -> dict:
@@ -503,9 +512,14 @@ def _submit(account: db.Account, code: str, title: str, abstract: str, project_t
     links = [(label, check_url(url)) for label, url in (("GitHub", github), ("Working demo", demo)) if url.strip()]
     report_name, report_file = check_file("report", *report)
     ppt_name, ppt_file = check_file("ppt", *ppt) if ppt else (None, None)
-    # submit_project() checks the link again; this only saves uploading the files for nothing.
+    # submit_project() checks the link and the team size again; this only saves
+    # uploading the files for nothing.
     with session.transaction(account) as conn:
-        open_link(conn, code)
+        link = open_link(conn, code)
+    team = 1 + len(mates)
+    if team < link["min_members"] or (link["max_members"] is not None and team > link["max_members"]):
+        raise HTTPException(422, f"This submission link takes teams of "
+                                 f"{team_sizes(link['min_members'], link['max_members'])} students; yours has {team}.")
 
     vector = embed_text(project_text(title, abstract))
     # The files go to storage first, under a folder for the submitting student; the

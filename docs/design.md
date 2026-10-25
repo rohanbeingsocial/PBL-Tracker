@@ -4,7 +4,7 @@
 
 - Keep every PBL project: title, abstract, subject, class, faculty member, year, software or hardware, status, team, tags, links, report, presentation and each student's marks.
 - Find past projects by keyword and by meaning, and warn when a new idea is close to an old one.
-- Enforce the rules that actually hold in our college, and nothing more: teams of any size, students in several projects at once, and marks out of whatever each submission is marked out of.
+- Enforce the rules that actually hold in our college, and nothing more: teams of whatever size the faculty member sets, students in several projects at once, and marks out of whatever each submission is marked out of.
 - Let a faculty member collect a class's projects through one submission link (subject, class, what it is for), approve or reject each one, give every student their own marks, and export them.
 - Keep marks private to the student, the team and the faculty member unless the team chooses to show its team score.
 - Only MIT-WPU students and faculty can use it.
@@ -19,9 +19,9 @@ thousands of projects.
 
 - A **user** is a student or a faculty member (`role`), always with an `@mitwpu.edu.in` email. Students have a PRN; faculty don't. A faculty member can also be an admin (the PBL coordinator).
 - A **subject** (DBMS-PBL, ML-PBL, CN-TH, ...) has its own usual `max_marks`.
-- A **submission link** is made by one faculty member (`faculty_id`, a user with the faculty role) for one subject, academic year, class (`TY ECE Div A`) and purpose (`Semester PBL`, `LCA 1`). It has a random `code` that forms its URL, a `max_marks` that starts as the subject's, and can be closed. A faculty member has many links; a subject has many links.
+- A **submission link** is made by one faculty member (`faculty_id`, a user with the faculty role) for one subject, academic year, class (`TY ECE Div A`) and purpose (`Semester PBL`, `LCA 1`). It has a random `code` that forms its URL, a `max_marks` that starts as the subject's, the fewest and most students a team can have (`min_members`, `max_members`; any size until set), and can be closed. A faculty member has many links; a subject has many links.
 - A **project** comes in through one submission link. The link's faculty member approves or rejects it (`decided_at` records when).
-- Projects and students are many-to-many through **project_members**, which also stores who leads the team and each student's `marks`. A team has no fixed size, and a student can be in any number of projects, but only one live project per link.
+- Projects and students are many-to-many through **project_members**, which also stores who leads the team and each student's `marks`. A team has as many students as its link allows, and a student can be in any number of projects, but only one live project per link.
 - Projects and **tags** are many-to-many through **project_tags**.
 - A project has any number of **links** (GitHub, working demo, video) and up to two **files**: exactly one report (a PDF) and at most one presentation. Each file row records who uploaded it.
 
@@ -31,7 +31,7 @@ The ER diagram is in the README (GitHub draws it from the Mermaid source).
 |---|---|---|
 | users | user_id | email unique, lowercase and `@mitwpu.edu.in`; PRN 10 digits, only for students; only faculty can be admins; bcrypt hash only |
 | subjects | subject_id | code unique; max_marks > 0 |
-| submission_links | submission_link_id | code unique, random, 6 to 16 lowercase letters or digits; faculty only; year format and sequence checks; max_marks > 0 and not below marks already given; one link per faculty member, subject, year, class and purpose |
+| submission_links | submission_link_id | code unique, random, 6 to 16 lowercase letters or digits; faculty only; year format and sequence checks; max_marks > 0 and not below marks already given; min_members at least 1, max_members not below it, and neither one leaving out a team already in the link; one link per faculty member, subject, year, class and purpose |
 | projects | project_id | status list; `decided_at` set exactly when decided; type list; title once per link; generated search_text |
 | project_members | (project_id, user_id) | students only; one leader per team; one live project per student per link; marks 0 to the link's max, only once approved |
 | tags | tag_id | name unique ignoring case |
@@ -95,7 +95,8 @@ Two columns look like they break this, and both are on purpose:
 | Projects come in only through submission links | The faculty member decides which class submits what, and every project lands in the right class's list without anyone picking a subject or a faculty member from a menu. A student can't send a project to a faculty member who never asked for it. |
 | A random code for each link, made by the database | The code is the link's URL, so it must not be guessable. `encode(gen_random_bytes(6), 'hex')` gives 12 hex characters (2^48 possibilities). `pbl_app` can't insert or change the column, so nobody can choose an easy one. |
 | One live project per student per link | A class submits one project per team for each purpose. The `check_member` trigger refuses a second one, and takes a `pg_advisory_xact_lock` on (link, student) first so two submits at the same moment can't both pass the check. A rejected project doesn't count, so the team can submit a better one. |
-| No limit on team size or on projects per student | That is how PBL works here: teams of 2 to 5, and around 5 projects per student each semester, one per subject. A limit in the database would only get in the way. |
+| Team size on the link, set by the faculty member | Teams here are usually 2 to 5, but each faculty member decides for their own submission, so `min_members` and `max_members` sit on the link, like `max_marks`. Empty means any size. `check_member` refuses one student too many, after a `pg_advisory_xact_lock` on the project so two students joining at once can't both get in. The fewest is checked by `submit_project()`, because a team is added one student at a time. Changing the sizes is refused if a team already in the link wouldn't fit; a rejected team doesn't count. |
+| No limit on projects per student | Around 5 projects per student each semester, one per subject. A limit in the database would only get in the way. |
 | `max_marks` on the link, `marks` on each team member | Labs are usually marked out of 33 and a theory mini project out of 5, but each submission can differ, so the faculty member sets the total on the link (empty means the subject's usual one, filled in by the `check_submission_link` trigger). Students in a team often don't get the same marks, so each one is marked separately and `check_member` checks the marks against the link. The team score is their average. Lowering a link's maximum below marks already given is refused. |
 | Software / hardware / both as a column, the stack as tags | Every project is exactly one of the three, so it is a column with a CHECK. The stack is a list of any length, so it goes in `tags`. |
 | Files in a storage bucket, details in `project_files` | A 15 MB report doesn't belong in a table row. The bucket holds the bytes; the table holds the name, size, kind, project and uploader, with foreign keys, so the database still knows what belongs to what. |

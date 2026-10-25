@@ -25,7 +25,8 @@ router = APIRouter(prefix="/api")
 # Submission links ---------------------------------------------------------------------
 
 LINK_COLUMNS = """submission_link_id, code, subject, subject_name, academic_year, class_name, purpose,
-                  max_marks::float8, is_open, created_at, waiting, approved, rejected, graded, students"""
+                  max_marks::float8, min_members, max_members, is_open, created_at,
+                  waiting, approved, rejected, graded, students"""
 
 
 def own_link(conn, link_id: int, account: db.Account) -> dict:
@@ -51,16 +52,26 @@ class LinkBody(BaseModel):
     class_name: str = Field(min_length=2, max_length=80)
     purpose: str = Field(min_length=2, max_length=100)
     max_marks: float | None = Field(None, gt=0, le=1000)    # empty: the subject's usual total
+    min_members: int = Field(1, ge=1, le=12)                # students per team, the leader included
+    max_members: int | None = Field(None, ge=1, le=12)      # empty: no upper limit
+
+
+def check_team_size(body: "LinkBody | LinkChange") -> None:
+    if body.max_members is not None and body.max_members < body.min_members:
+        raise HTTPException(422, "The most students in a team can't be fewer than the fewest.")
 
 
 @router.post("/links")
 def add_link(body: LinkBody, account: db.Account = session.faculty) -> dict:
+    check_team_size(body)
     with session.transaction(account) as conn:
         link = conn.execute(
-            """INSERT INTO pbl.submission_links (faculty_id, subject_id, academic_year, class_name, purpose, max_marks)
-               VALUES (%s, %s, pbl.current_academic_year(), btrim(%s), btrim(%s), %s)
+            """INSERT INTO pbl.submission_links (faculty_id, subject_id, academic_year, class_name, purpose, max_marks,
+                                                 min_members, max_members)
+               VALUES (%s, %s, pbl.current_academic_year(), btrim(%s), btrim(%s), %s, %s, %s)
                RETURNING submission_link_id, code""",
-            (account.user_id, body.subject_id, body.class_name, body.purpose, body.max_marks)).fetchone()
+            (account.user_id, body.subject_id, body.class_name, body.purpose, body.max_marks,
+             body.min_members, body.max_members)).fetchone()
     return link
 
 
@@ -68,16 +79,21 @@ class LinkChange(BaseModel):
     class_name: str = Field(min_length=2, max_length=80)
     purpose: str = Field(min_length=2, max_length=100)
     max_marks: float = Field(gt=0, le=1000)
+    min_members: int = Field(ge=1, le=12)
+    max_members: int | None = Field(ge=1, le=12)            # required, so leaving it out can't lift the limit
     is_open: bool
 
 
 @router.put("/links/{link_id}")
 def change_link(link_id: int, body: LinkChange, account: db.Account = session.faculty) -> dict:
+    check_team_size(body)
     with session.transaction(account) as conn:
         changed = conn.execute(
-            """UPDATE pbl.submission_links SET class_name = btrim(%s), purpose = btrim(%s), max_marks = %s, is_open = %s
+            """UPDATE pbl.submission_links SET class_name = btrim(%s), purpose = btrim(%s), max_marks = %s,
+                                               min_members = %s, max_members = %s, is_open = %s
                WHERE submission_link_id = %s AND faculty_id = %s""",
-            (body.class_name, body.purpose, body.max_marks, body.is_open, link_id, account.user_id)).rowcount
+            (body.class_name, body.purpose, body.max_marks, body.min_members, body.max_members, body.is_open,
+             link_id, account.user_id)).rowcount
     if changed == 0:
         raise HTTPException(404, "This isn't one of your submission links.")
     return {}

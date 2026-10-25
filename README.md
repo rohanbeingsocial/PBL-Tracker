@@ -49,7 +49,7 @@ across different years.
 | Project | everyone | The report opens on the left; on the right the team, subject, year, the faculty member who approved it, the dates, technologies, links, presentation and abstract |
 | Submission link (`/s/<code>`) | everyone | What the link is for (subject, class, faculty member, purpose), the class's approved projects, and, for a student whose team has no project here yet, the submit form: title, abstract, teammates, technologies, the report (PDF, required), and optionally the presentation, a GitHub link and a working demo link. The closest past projects show up next to the form |
 | Trends | everyone | Most used technologies per year, software vs. hardware, ideas that keep coming back, faculty load |
-| Submission links | faculty | Make a link (subject, class, what it is for, what each student is marked out of), copy it to send to the class, close it when the deadline passes. Each link's page lists every project that came in with each student's marks, and downloads them as a CSV file |
+| Submission links | faculty | Make a link (subject, class, what it is for, what each student is marked out of, how many students a team can have), copy it to send to the class, close it when the deadline passes. Each link's page lists every project that came in with each student's marks, and downloads them as a CSV file |
 | Project, for its faculty member | faculty | Approve or reject with a note, then give each student their marks |
 | People | admin | Add students and faculty, give someone a temporary password, switch an account off, make a faculty member an admin |
 | Subjects | admin | Add subjects and set what each one is marked out of |
@@ -118,6 +118,8 @@ erDiagram
         varchar class_name
         varchar purpose
         numeric max_marks
+        smallint min_members
+        smallint max_members "NULL: no limit"
         boolean is_open
     }
     PROJECTS {
@@ -177,7 +179,8 @@ who uploaded it and where it is stored.
 
 | Rule | How |
 |---|---|
-| Teams can be any size, and a student can be in any number of projects in a year | Nothing limits them, on purpose |
+| A team has as many students as its link allows: the faculty member sets the fewest and the most, or leaves it at any size | `team_size_range` CHECK; `check_member` trigger refuses one student too many; `submit_project()` checks the whole team; `check_submission_link` refuses sizes that a team already in the link doesn't fit |
+| A student can be in any number of projects in a year | Nothing limits it, on purpose |
 | A student has one live project per submission link (a rejected one doesn't count, so the team can try again) | `check_member` trigger, with an advisory lock so two submits at once can't both get in |
 | Only students can be team members | `check_member` trigger |
 | One leader per team | Partial unique index |

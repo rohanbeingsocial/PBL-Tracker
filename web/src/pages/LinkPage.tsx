@@ -3,9 +3,9 @@ import { api, linkUrl, type Band, type Status, type SubmissionLink } from "../ap
 import { Icon } from "../components/charts";
 import { AppLink, Closeness, Failed, Loading, Metrics, PageHead, StatusTag } from "../components/ui";
 import { useApp } from "../context";
-import { formatDay } from "../format";
+import { formatDay, teamSize } from "../format";
 import { useLoad } from "../hooks";
-import { CopyLink, joinClass, OpenTag, splitClass } from "./Links";
+import { CopyLink, joinClass, OpenTag, readTeam, splitClass } from "./Links";
 
 interface LinkStudent {
   user_id: number;
@@ -31,18 +31,22 @@ function EditLink({ link, onSaved, onCancel }: { link: LinkData; onSaved: () => 
   const [cls, setCls] = useState(() => splitClass(link.class_name));
   const [purpose, setPurpose] = useState(link.purpose);
   const [max, setMax] = useState(String(link.max_marks));
+  const [fewest, setFewest] = useState(String(link.min_members));
+  const [most, setMost] = useState(link.max_members === null ? "" : String(link.max_members));
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
     if (!(Number(max) > 0)) return setError("Marks out of has to be more than 0.");
+    const team = readTeam(fewest, most);
+    if (typeof team === "string") return setError(team);
     try {
       await api(`/links/${link.submission_link_id}`, {
         method: "PUT",
-        body: { class_name: joinClass(cls), purpose: purpose.trim(), max_marks: Number(max), is_open: link.is_open },
+        body: { class_name: joinClass(cls), purpose: purpose.trim(), max_marks: Number(max), ...team, is_open: link.is_open },
       });
       onSaved();
     } catch (e) {
-      setError((e as Error).message);    // e.g. a student already has more marks than the new maximum
+      setError((e as Error).message);    // e.g. a student already has more marks than the new maximum, or a team doesn't fit
     }
   }
   return (
@@ -58,6 +62,10 @@ function EditLink({ link, onSaved, onCancel }: { link: LinkData; onSaved: () => 
                onChange={(e) => setPurpose(e.target.value)} />
         <input className="input mono" style={{ width: 100 }} type="number" min={0.5} step={0.5} value={max}
                aria-label="Each student out of" onChange={(e) => setMax(e.target.value)} />
+        <input className="input mono" style={{ width: 90 }} type="number" min={1} max={12} step={1} value={fewest}
+               aria-label="Fewest students in a team" placeholder="1" onChange={(e) => setFewest(e.target.value)} />
+        <input className="input mono" style={{ width: 110 }} type="number" min={1} max={12} step={1} value={most}
+               aria-label="Most students in a team" placeholder="No limit" onChange={(e) => setMost(e.target.value)} />
         <button className="btn primary" disabled={!cls.year.trim() || !cls.branch.trim() || purpose.trim().length < 2} onClick={save}>Save</button>
         <button className="btn" onClick={onCancel}>Cancel</button>
       </div>
@@ -114,7 +122,8 @@ export default function LinkPage({ id }: { id: number }) {
     try {
       await api(`/links/${id}`, {
         method: "PUT",
-        body: { class_name: link!.class_name, purpose: link!.purpose, max_marks: link!.max_marks, is_open: open },
+        body: { class_name: link!.class_name, purpose: link!.purpose, max_marks: link!.max_marks,
+                min_members: link!.min_members, max_members: link!.max_members, is_open: open },
       });
       toast(open ? "The link takes projects again." : "Link closed. It takes no new projects.");
       reload();
@@ -136,7 +145,8 @@ export default function LinkPage({ id }: { id: number }) {
   return (
     <>
       <PageHead title={`${link.subject} · ${link.class_name}`} back={back}
-                sub={`${link.purpose} · ${link.academic_year} · each student out of ${link.max_marks}`} />
+                sub={[link.purpose, link.academic_year, `each student out of ${link.max_marks}`,
+                      teamSize(link.min_members, link.max_members)].filter(Boolean).join(" · ")} />
       <div className="stack" style={{ gap: 16 }}>
         <div className="card pad stack" style={{ gap: 12 }}>
           <div className="row wrap" style={{ gap: 10 }}>
@@ -149,7 +159,7 @@ export default function LinkPage({ id }: { id: number }) {
             ? <EditLink link={link} onCancel={() => setEditing(false)}
                         onSaved={() => { toast("Saved."); setEditing(false); reload(); }} />
             : <div className="row wrap" style={{ gap: 14 }}>
-                <button className="link" onClick={() => setEditing(true)}>Change class, purpose or marks</button>
+                <button className="link" onClick={() => setEditing(true)}>Change class, purpose, marks or team size</button>
                 <button className="link" disabled={busy} onClick={() => setOpen(!link.is_open)}>
                   {link.is_open ? "Close the link" : "Open it again"}
                 </button>

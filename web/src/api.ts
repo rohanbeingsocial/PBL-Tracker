@@ -106,6 +106,8 @@ export interface SubmissionLink {
   class_name: string;
   purpose: string;
   max_marks: number;
+  min_members: number;           // students per team, leader included
+  max_members: number | null;    // null: no upper limit
   is_open: boolean;
   created_at: string;
   waiting: number;

@@ -127,9 +127,10 @@ $$;
 
 
 -- The only way a project gets created from the app. Everything happens in one
--- transaction: if one PRN is wrong or one link is malformed, nothing is saved.
--- The report is required; the presentation is optional. The app stores both files
--- in the bucket first and passes their names, paths and sizes here.
+-- transaction: if one PRN is wrong, one link is malformed or the team is a size the
+-- submission link doesn't take, nothing is saved. The report is required; the
+-- presentation is optional. The app stores both files in the bucket first and passes
+-- their names, paths and sizes here.
 --
 -- SECURITY DEFINER means it runs with the rights of the function's owner, so the
 -- app's login needs no INSERT rights on projects. The project goes in through a
@@ -162,6 +163,7 @@ DECLARE
     v_link        submission_links;
     v_project_id  int;
     v_unknown     text;
+    v_team        int;
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = p_leader_id AND u.role = 'student' AND u.is_active) THEN
         RAISE EXCEPTION 'Only a student can submit a project' USING ERRCODE = 'check_violation';
@@ -180,6 +182,21 @@ BEGIN
     WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.prn = m AND u.role = 'student');
     IF v_unknown IS NOT NULL THEN
         RAISE EXCEPTION 'No student with PRN %', v_unknown USING ERRCODE = 'check_violation';
+    END IF;
+
+    -- The faculty member sets how many students a team has, the leader included.
+    SELECT 1 + count(DISTINCT u.user_id) INTO v_team
+    FROM unnest(p_member_prns) AS m
+    JOIN users u ON u.prn = m
+    WHERE u.user_id <> p_leader_id;
+    IF v_team < v_link.min_members OR v_team > v_link.max_members THEN
+        RAISE EXCEPTION 'This submission link takes teams of % students; yours has %',
+              CASE WHEN v_link.max_members IS NULL THEN 'at least ' || v_link.min_members
+                   WHEN v_link.max_members = v_link.min_members THEN v_link.min_members::text
+                   WHEN v_link.min_members = 1 THEN 'up to ' || v_link.max_members
+                   ELSE v_link.min_members || ' to ' || v_link.max_members END,
+              v_team
+              USING ERRCODE = 'check_violation';
     END IF;
 
     IF p_report_path IS NULL THEN

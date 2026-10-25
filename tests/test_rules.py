@@ -1,7 +1,7 @@
 """The business rules from 01_tables.sql and 04_triggers.sql, run as the table owner."""
 from tests.helpers import error_of, new_link, new_project, project_id, set_embedding, unit_vector, user_id
 
-ROHAN, OM, YASH = "1262241783", "1032230011", "1032230013"
+ROHAN, OM, YASH, KRISHNA = "1262241783", "1032230011", "1032230013", "1262241766"
 KULKARNI = "akulkarni@mitwpu.edu.in"
 
 
@@ -21,6 +21,43 @@ def test_a_team_can_have_any_number_of_members(db):
         add_member(db, lab, prn)
     count = db.execute("SELECT count(*) AS n FROM pbl.project_members WHERE project_id = %s", (lab,)).fetchone()
     assert count["n"] == 6
+
+
+def team_size(conn, link, fewest, most):
+    conn.execute("UPDATE pbl.submission_links SET min_members = %s, max_members = %s WHERE submission_link_id = %s",
+                 (fewest, most, link))
+
+
+def test_a_team_grows_only_up_to_the_links_largest(db):
+    link = new_link(db, "DBMS-PBL", "2026-27", "Teams of three")
+    team_size(db, link, 2, 3)
+    canteen = new_project(db, "Canteen Queue Display", "DBMS-PBL", "2026-27", link=link)
+    for prn in (ROHAN, OM, YASH):
+        add_member(db, canteen, prn)
+    err = error_of(db, "INSERT INTO pbl.project_members (project_id, user_id) VALUES (%s, %s)",
+                   (canteen, user_id(db, KRISHNA)))
+    assert err.diag.message_primary == "This submission link takes teams of at most 3 students"
+    db.execute("UPDATE pbl.project_members SET user_id = %s WHERE project_id = %s AND user_id = %s",
+               (user_id(db, KRISHNA), canteen, user_id(db, YASH)))      # swapping one student for another is fine
+
+
+def test_team_sizes_are_in_order_and_fit_the_teams_already_in(db):
+    link = new_link(db, "DBMS-PBL", "2026-27", "Team sizes")
+    assert error_of(db, "UPDATE pbl.submission_links SET min_members = 0 WHERE submission_link_id = %s",
+                    (link,)).sqlstate == "23514"
+    err = error_of(db, "UPDATE pbl.submission_links SET min_members = 3, max_members = 2 WHERE submission_link_id = %s",
+                   (link,))
+    assert err.diag.constraint_name == "team_size_range"
+    library = new_project(db, "Library Seat Finder", "DBMS-PBL", "2026-27", link=link)
+    for prn in (ROHAN, OM, YASH):
+        add_member(db, library, prn)
+    err = error_of(db, "UPDATE pbl.submission_links SET max_members = 2 WHERE submission_link_id = %s", (link,))
+    assert err.diag.message_primary == "A team in this link already has 3 students, so the most in a team can't go below that"
+    err = error_of(db, "UPDATE pbl.submission_links SET min_members = 4 WHERE submission_link_id = %s", (link,))
+    assert err.diag.message_primary == "A team in this link has only 3 students, so the fewest in a team can't go above that"
+    team_size(db, link, 3, 3)
+    db.execute("UPDATE pbl.projects SET status = 'rejected' WHERE project_id = %s", (library,))
+    team_size(db, link, 4, 5)                                   # a rejected team doesn't count
 
 
 def test_a_student_can_be_in_several_projects_in_one_year(db):

@@ -17,3 +17,11 @@ export function shortName(name: string, role: string): string {
 }
 
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+// How many students a submission link takes per team, leader included: "teams of 2 to 4
+// students". Empty when any size will do.
+export function teamSize(min: number, max: number | null): string {
+  if (max === null) return min > 1 ? `teams of at least ${min} students` : "";
+  if (max === min) return `teams of ${plural(min, "student")}`;
+  return min > 1 ? `teams of ${min} to ${max} students` : `teams of up to ${max} students`;
+}

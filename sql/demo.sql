@@ -13,7 +13,8 @@
 BEGIN;
 SET LOCAL search_path = pbl, extensions;
 
-\echo '\n=== 1. Teams have no fixed size. ECE Lab Component Tracker has 2 members; add 3 more.'
+\echo '\n=== 1. The faculty member decides how many students a team has. ECE Lab Component Tracker''s'
+\echo '        link takes any size, so its team of 2 can grow to 5.'
 INSERT INTO project_members (project_id, user_id)
 SELECT p.project_id, u.user_id
 FROM projects p, users u
@@ -21,6 +22,18 @@ WHERE p.title = 'ECE Lab Component Tracker'
   AND u.prn IN ('1262241766', '1032240103', '1032240104');
 
 SELECT title, members FROM project_cards WHERE title = 'ECE Lab Component Tracker';
+
+\echo '\n        Now the link takes teams of 2 to 5: a sixth student is refused, and so is lowering the limit to 4.'
+UPDATE submission_links SET min_members = 2, max_members = 5
+WHERE submission_link_id = (SELECT submission_link_id FROM projects WHERE title = 'ECE Lab Component Tracker');
+
+INSERT INTO project_members (project_id, user_id)
+SELECT p.project_id, u.user_id
+FROM projects p, users u
+WHERE p.title = 'ECE Lab Component Tracker' AND u.prn = '1032240105';
+
+UPDATE submission_links SET max_members = 4
+WHERE submission_link_id = (SELECT submission_link_id FROM projects WHERE title = 'ECE Lab Component Tracker');
 
 \echo '\n=== 2. Only students can be team members.'
 INSERT INTO project_members (project_id, user_id)

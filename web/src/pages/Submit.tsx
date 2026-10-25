@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, postForm, type Band, type ProjectType } from "../api";
 import { AppLink, Closeness, PageHead, Segmented } from "../components/ui";
 import { useApp } from "../context";
+import { teamSize } from "../format";
 import { useDebounced } from "../hooks";
 
 const TYPES = ["software", "hardware", "both"] as const;
@@ -57,8 +58,9 @@ function SimilarPast({ title, abstract }: { title: string; abstract: string }) {
 }
 
 // The submit form of one submission link: the link fixes the subject, the faculty
-// member and the class, so the team only describes its project.
-export function SubmitForm({ code, faculty }: { code: string; faculty: string }) {
+// member, the class and how many students a team has, so the team only describes its project.
+export function SubmitForm({ code, faculty, minTeam, maxTeam }:
+                           { code: string; faculty: string; minTeam: number; maxTeam: number | null }) {
   const { me, ref, toast, go } = useApp();
   const [title, setTitle] = useState("");
   const [abstract, setAbstract] = useState("");
@@ -84,7 +86,10 @@ export function SubmitForm({ code, faculty }: { code: string; faculty: string })
   function problem(): string | null {
     if (title.trim().length < 5) return "Give the project a title of at least five characters.";
     if (abstract.trim().length < 30) return "The abstract needs at least 30 characters.";
-    if (!mates.split(/[,\s]+/).filter(Boolean).every((m) => /^[0-9]{10}$/.test(m))) return "Enter each teammate's 10-digit PRN, separated by commas.";
+    const prns = mates.split(/[,\s]+/).filter(Boolean);
+    if (!prns.every((m) => /^[0-9]{10}$/.test(m))) return "Enter each teammate's 10-digit PRN, separated by commas.";
+    const team = 1 + new Set(prns.filter((m) => m !== me.prn)).size;
+    if (team < minTeam || (maxTeam !== null && team > maxTeam)) return `This submission link takes ${teamSize(minTeam, maxTeam)}; yours has ${team}.`;
     if (!report) return "Attach the project report (PDF).";
     if (!report.name.toLowerCase().endsWith(".pdf")) return "The report has to be a PDF.";
     if (ppt && !/\.(pptx|pdf)$/i.test(ppt.name)) return "The presentation has to be a .pptx or .pdf file.";
@@ -137,9 +142,12 @@ export function SubmitForm({ code, faculty }: { code: string; faculty: string })
             <textarea className="textarea" rows={5} value={abstract} maxLength={3000} onChange={(e) => setAbstract(e.target.value)}
                       placeholder="What it does, who it is for, and how it works." />
           </label>
-          <label className="field"><span>Teammates' PRNs</span>
+          <label className="field"><span>Teammates' PRNs{minTeam > 1 && req}</span>
             <input className="input" value={mates} maxLength={300} onChange={(e) => setMates(e.target.value)} placeholder="1032240102, 1032240103" />
-            <small>Separate them with commas. Leave it empty if you worked alone.</small>
+            <small>
+              {teamSize(minTeam, maxTeam) && `This link takes ${teamSize(minTeam, maxTeam)}, you included. `}
+              Separate them with commas.{minTeam === 1 && " Leave it empty if you worked alone."}
+            </small>
           </label>
           <div className="field"><span>Type</span>
             <div><Segmented options={TYPES} value={type} onChange={setType} label="Project type" names={TYPE_NAMES} /></div>
