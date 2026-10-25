@@ -18,6 +18,19 @@ export function CopyLink({ code }: { code: string }) {
   return <button className="btn" onClick={copy}><Icon name="link" size={15} />Copy link</button>;
 }
 
+// The class is typed as three parts and kept as one label, for example "TY ECE Div A".
+export interface ClassParts { year: string; branch: string; division: string }
+
+export function joinClass({ year, branch, division }: ClassParts): string {
+  const div = division.trim().replace(/^div(ision)?\.?\s*/i, "");    // "Div A" and "A" both mean A
+  return [year.trim(), branch.trim(), div && `Div ${div}`].filter(Boolean).join(" ");
+}
+
+export function splitClass(name: string): ClassParts {
+  const m = name.match(/^(\S+)\s+(.*?)(?:\s+Div\s+(\S+))?$/i);
+  return m ? { year: m[1], branch: m[2], division: m[3] ?? "" } : { year: name, branch: "", division: "" };
+}
+
 export function OpenTag({ open }: { open: boolean }) {
   return <span className={`status ${open ? "approved" : "rejected"}`}>{open ? "Open" : "Closed"}</span>;
 }
@@ -25,7 +38,7 @@ export function OpenTag({ open }: { open: boolean }) {
 function NewLink({ onMade }: { onMade: (id: number) => void }) {
   const { ref } = useApp();
   const [subject, setSubject] = useState(0);
-  const [className, setClassName] = useState("");
+  const [cls, setCls] = useState<ClassParts>({ year: "", branch: "", division: "" });
   const [purpose, setPurpose] = useState("");
   const [max, setMax] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -36,14 +49,15 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
     e.preventDefault();
     const maxMarks = max.trim() === "" ? null : Number(max);
     if (!subject) return setError("Choose the subject.");
-    if (className.trim().length < 2) return setError("Write which class it is for, for example TY ECE Div A.");
+    if (!cls.year.trim()) return setError("Write the students' year, for example TY.");
+    if (!cls.branch.trim()) return setError("Write the branch, for example ECE.");
     if (purpose.trim().length < 2) return setError("Write what the submission is for, for example Semester PBL.");
     if (maxMarks !== null && !(maxMarks > 0)) return setError("Marks out of has to be more than 0.");
     setBusy(true);
     setError(null);
     try {
       const made = await api<{ submission_link_id: number }>("/links", {
-        body: { subject_id: subject, class_name: className.trim(), purpose: purpose.trim(), max_marks: maxMarks },
+        body: { subject_id: subject, class_name: joinClass(cls), purpose: purpose.trim(), max_marks: maxMarks },
       });
       onMade(made.submission_link_id);
     } catch (err) {
@@ -63,10 +77,6 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
             {ref.subjects.map((s) => <option key={s.subject_id} value={s.subject_id}>{s.code} - {s.name}</option>)}
           </select>
         </label>
-        <label className="field"><span>Class{req}</span>
-          <input className="input" value={className} maxLength={80} placeholder="TY ECE Div A"
-                 onChange={(e) => setClassName(e.target.value)} />
-        </label>
         <label className="field"><span>What it is for{req}</span>
           <input className="input" value={purpose} maxLength={100} placeholder="Semester PBL, LCA 1, Mini project"
                  onChange={(e) => setPurpose(e.target.value)} />
@@ -75,6 +85,21 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
           <input className="input" type="number" min={0.5} step={0.5} value={max} placeholder={chosen ? String(chosen.max_marks) : ""}
                  onChange={(e) => setMax(e.target.value)} />
           <small>{chosen ? `Leave it empty for the subject's usual ${chosen.max_marks}.` : "Leave it empty for the subject's usual total."}</small>
+        </label>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
+        <label className="field"><span>Year of study{req}</span>
+          <input className="input" value={cls.year} maxLength={20} placeholder="TY"
+                 onChange={(e) => setCls({ ...cls, year: e.target.value })} />
+        </label>
+        <label className="field"><span>Branch{req}</span>
+          <input className="input" value={cls.branch} maxLength={40} placeholder="ECE"
+                 onChange={(e) => setCls({ ...cls, branch: e.target.value })} />
+        </label>
+        <label className="field"><span>Division</span>
+          <input className="input" value={cls.division} maxLength={10} placeholder="A"
+                 onChange={(e) => setCls({ ...cls, division: e.target.value })} />
+          <small>Leave it empty if the class has no divisions.</small>
         </label>
       </div>
       <div className="row" style={{ gap: 12 }}>

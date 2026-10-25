@@ -5,7 +5,7 @@ import { AppLink, Closeness, Failed, Loading, Metrics, PageHead, StatusTag } fro
 import { useApp } from "../context";
 import { formatDay } from "../format";
 import { useLoad } from "../hooks";
-import { CopyLink, OpenTag } from "./Links";
+import { CopyLink, joinClass, OpenTag, splitClass } from "./Links";
 
 interface LinkStudent {
   user_id: number;
@@ -28,7 +28,7 @@ interface LinkProject {
 type LinkData = SubmissionLink & { projects: LinkProject[] };
 
 function EditLink({ link, onSaved, onCancel }: { link: LinkData; onSaved: () => void; onCancel: () => void }) {
-  const [className, setClassName] = useState(link.class_name);
+  const [cls, setCls] = useState(() => splitClass(link.class_name));
   const [purpose, setPurpose] = useState(link.purpose);
   const [max, setMax] = useState(String(link.max_marks));
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +38,7 @@ function EditLink({ link, onSaved, onCancel }: { link: LinkData; onSaved: () => 
     try {
       await api(`/links/${link.submission_link_id}`, {
         method: "PUT",
-        body: { class_name: className.trim(), purpose: purpose.trim(), max_marks: Number(max), is_open: link.is_open },
+        body: { class_name: joinClass(cls), purpose: purpose.trim(), max_marks: Number(max), is_open: link.is_open },
       });
       onSaved();
     } catch (e) {
@@ -48,13 +48,17 @@ function EditLink({ link, onSaved, onCancel }: { link: LinkData; onSaved: () => 
   return (
     <div className="stack" style={{ gap: 8 }}>
       <div className="row wrap" style={{ gap: 8 }}>
-        <input className="input grow" style={{ minWidth: 160 }} value={className} maxLength={80} aria-label="Class"
-               onChange={(e) => setClassName(e.target.value)} />
+        <input className="input" style={{ width: 90 }} value={cls.year} maxLength={20} aria-label="Year of study"
+               placeholder="TY" onChange={(e) => setCls({ ...cls, year: e.target.value })} />
+        <input className="input grow" style={{ minWidth: 120 }} value={cls.branch} maxLength={40} aria-label="Branch"
+               placeholder="ECE" onChange={(e) => setCls({ ...cls, branch: e.target.value })} />
+        <input className="input" style={{ width: 80 }} value={cls.division} maxLength={10} aria-label="Division"
+               placeholder="Div" onChange={(e) => setCls({ ...cls, division: e.target.value })} />
         <input className="input grow" style={{ minWidth: 160 }} value={purpose} maxLength={100} aria-label="What it is for"
                onChange={(e) => setPurpose(e.target.value)} />
         <input className="input mono" style={{ width: 100 }} type="number" min={0.5} step={0.5} value={max}
                aria-label="Each student out of" onChange={(e) => setMax(e.target.value)} />
-        <button className="btn primary" disabled={className.trim().length < 2 || purpose.trim().length < 2} onClick={save}>Save</button>
+        <button className="btn primary" disabled={!cls.year.trim() || !cls.branch.trim() || purpose.trim().length < 2} onClick={save}>Save</button>
         <button className="btn" onClick={onCancel}>Cancel</button>
       </div>
       {error && <div className="error-text" role="alert">{error}</div>}

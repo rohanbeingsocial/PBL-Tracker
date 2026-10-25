@@ -325,10 +325,11 @@ def test_faculty_make_a_submission_link(open_as, made):
     alert(page, "Choose the subject.")
     ml = next(s for s in page.request.get(f"{URL}/api/reference").json()["subjects"] if s["code"] == "ML-PBL")
     page.get_by_role("combobox", name=re.compile("^Subject")).select_option(str(ml["subject_id"]))
-    page.get_by_label("Class").fill("A")
+    page.get_by_label("Year of study").fill("TY")
     make.click()
-    alert(page, "Write which class it is for")
-    page.get_by_label("Class").fill(CLASS)
+    alert(page, "Write the branch")
+    page.get_by_label("Branch").fill("ECE")
+    page.get_by_label("Division").fill("E2E")             # joined into CLASS
     page.get_by_label("What it is for").fill("x")
     make.click()
     alert(page, "Write what the submission is for")
@@ -359,7 +360,9 @@ def test_faculty_make_a_submission_link(open_as, made):
     # The same link twice is refused; the first one is in the list.
     page.get_by_role("link", name="← Submission links").click()
     page.get_by_role("combobox", name=re.compile("^Subject")).select_option(str(ml["subject_id"]))
-    page.get_by_label("Class").fill(CLASS)
+    page.get_by_label("Year of study").fill("ty")
+    page.get_by_label("Branch").fill("ECE")
+    page.get_by_label("Division").fill("Div E2E")         # same class: "Div" isn't doubled, case is ignored
     page.get_by_label("What it is for").fill(made["purpose"])
     make.click()
     expect(page.get_by_role("alert")).to_be_visible()
@@ -539,6 +542,9 @@ def test_faculty_review_grade_change_close_and_export(open_as, made):
     expect(page.get_by_role("alert")).to_be_visible()
     page.get_by_role("button", name="Cancel").click()
     page.get_by_role("button", name="Change class, purpose or marks").click()
+    expect(page.get_by_label("Year of study")).to_have_value("TY")      # the class comes back in its three parts
+    expect(page.get_by_label("Branch")).to_have_value("ECE")
+    expect(page.get_by_label("Division")).to_have_value("E2E")
     made["purpose"] += " renamed"
     page.get_by_label("What it is for").fill(made["purpose"])
     page.get_by_role("button", name="Save").click()
