@@ -404,7 +404,7 @@ def test_search_filters_by_subject_type_and_stack(accounts):
 
 
 def test_meaning_search_finds_projects_that_share_no_words(accounts):
-    pytest.importorskip("sentence_transformers")
+    pytest.importorskip("onnxruntime")
     rows = client_as(accounts["student"]).get(
         "/api/search", params={"q": "predict heart attack risk from patient data", "mode": "Meaning"}).json()["rows"]
     assert rows[0]["title"] == "Cardiac Risk Estimation from Patient Vitals"

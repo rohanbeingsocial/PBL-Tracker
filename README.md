@@ -233,7 +233,7 @@ You need Python 3.10+, Node.js 20+, and either a Supabase project or Docker.
 ```
 python -m venv .venv
 .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt   # pulls in PyTorch, a few hundred MB; do it on home Wi-Fi
+pip install -r requirements.txt   # about 100 MB, mostly onnxruntime
 copy .env.example .env            # macOS/Linux: cp .env.example .env
 cd web && npm install && npm run build && cd ..
 ```
