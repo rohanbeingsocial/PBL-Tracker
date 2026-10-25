@@ -46,8 +46,8 @@ END $$;
 
 
 -- Reading ----------------------------------------------------------------------
-GRANT SELECT ON subjects, tags, projects, project_members, project_links, project_tags, project_files,
-                project_cards, review_queue, repeated_ideas, tag_trends
+GRANT SELECT ON subjects, submission_links, tags, projects, project_members, project_links, project_tags,
+                project_files, project_cards, team_marks, link_progress, review_queue, repeated_ideas, tag_trends
       TO pbl_app;
 
 -- Every column of users except password_hash.
@@ -57,10 +57,17 @@ GRANT SELECT (user_id, name, email, prn, role, is_admin, must_change_password,
 
 
 -- Changing ---------------------------------------------------------------------
--- Column-level UPDATE: the review decision, marks, whether the team shows its marks,
--- and the embedding the app makes for older projects. Title, abstract, subject and
--- faculty can't be changed by the app.
-GRANT UPDATE (status, review_note, marks, marks_public, embedding) ON projects TO pbl_app;
+-- Column-level UPDATE: the review decision, whether the team shows its score, and
+-- the embedding the app makes for older projects. Title, abstract and the link a
+-- project came through can't be changed by the app. Each student's marks are the
+-- only column of project_members the app can change.
+GRANT UPDATE (status, review_note, marks_public, embedding) ON projects TO pbl_app;
+GRANT UPDATE (marks) ON project_members TO pbl_app;
+
+-- Faculty open and edit their submission links. The code isn't on the INSERT list,
+-- so it always comes from the table's random default.
+GRANT INSERT (faculty_id, subject_id, academic_year, class_name, purpose, max_marks) ON submission_links TO pbl_app;
+GRANT UPDATE (class_name, purpose, max_marks, is_open) ON submission_links TO pbl_app;
 
 -- Links and files are added and removed after a project exists. A new report or
 -- presentation replaces the old one in place.
@@ -81,7 +88,7 @@ GRANT EXECUTE ON FUNCTION
       keyword_search(text, int),
       similar_projects(double precision[], int, int),
       hybrid_search(text, double precision[], int),
-      submit_project(int, text, text, int, int, text[], text, text[], text[], text[], double precision[],
+      submit_project(int, text, text, text, text[], text, text[], text[], text[], double precision[],
                      text, text, int, text, text, int),
       sign_in(text, text),
       change_password(int, text, text),

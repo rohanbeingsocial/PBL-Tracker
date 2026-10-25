@@ -4,74 +4,127 @@
 SET search_path = pbl, extensions;
 
 
--- 1. A submitted project is approved or rejected once, and decided_at records when.
---    A project's faculty_id has to point to a faculty member, and marks can only be
---    given to an approved project, up to its subject's max_marks.
-CREATE FUNCTION trg_check_project() RETURNS trigger
+-- 1. A submission link belongs to a faculty member, and starts with its subject's
+--    usual total when no max_marks is given. Lowering max_marks below marks that
+--    were already given is refused.
+CREATE FUNCTION trg_check_submission_link() RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pbl, pg_temp
 AS $$
 DECLARE
-    v_role  varchar;
-    v_max   numeric;
+    v_highest  numeric;
 BEGIN
-    IF TG_OP = 'UPDATE' AND NEW.status IS DISTINCT FROM OLD.status THEN
-        IF NOT (OLD.status = 'submitted' AND NEW.status IN ('approved', 'rejected')) THEN
-            RAISE EXCEPTION 'Status cannot change from % to %', OLD.status, NEW.status
-                  USING ERRCODE = 'check_violation';
-        END IF;
-        NEW.decided_at := now();
-    END IF;
-
     IF TG_OP = 'INSERT' OR NEW.faculty_id IS DISTINCT FROM OLD.faculty_id THEN
-        SELECT u.role INTO v_role FROM users u WHERE u.user_id = NEW.faculty_id;
-        IF v_role IS DISTINCT FROM 'faculty' THEN
-            RAISE EXCEPTION 'The assigned faculty member has to be a faculty user'
+        IF NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = NEW.faculty_id AND u.role = 'faculty') THEN
+            RAISE EXCEPTION 'A submission link has to belong to a faculty user'
                   USING ERRCODE = 'check_violation';
         END IF;
     END IF;
 
-    IF NEW.marks IS NOT NULL THEN
-        IF NEW.status <> 'approved' THEN
-            RAISE EXCEPTION 'Only approved projects can be marked (this one is %)', NEW.status
-                  USING ERRCODE = 'check_violation';
-        END IF;
+    IF NEW.max_marks IS NULL THEN
+        SELECT s.max_marks INTO NEW.max_marks FROM subjects s WHERE s.subject_id = NEW.subject_id;
+    END IF;
 
-        SELECT s.max_marks INTO v_max FROM subjects s WHERE s.subject_id = NEW.subject_id;
-        IF NEW.marks > v_max THEN
-            RAISE EXCEPTION 'Marks % are more than the maximum % for this subject', NEW.marks, v_max
+    IF TG_OP = 'UPDATE' AND NEW.max_marks < OLD.max_marks THEN
+        SELECT max(pm.marks) INTO v_highest
+          FROM project_members pm
+          JOIN projects p ON p.project_id = pm.project_id
+         WHERE p.submission_link_id = NEW.submission_link_id;
+        IF v_highest > NEW.max_marks THEN
+            RAISE EXCEPTION 'A student in this link already has % marks, so the maximum can''t go below that', v_highest
                   USING ERRCODE = 'check_violation';
         END IF;
     END IF;
 
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER check_submission_link
+BEFORE INSERT OR UPDATE OF faculty_id, subject_id, max_marks ON submission_links
+FOR EACH ROW EXECUTE FUNCTION trg_check_submission_link();
+
+
+-- 2. A submitted project is approved or rejected once, and decided_at records when.
+CREATE FUNCTION trg_check_project() RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pbl, pg_temp
+AS $$
+BEGIN
+    IF NOT (OLD.status = 'submitted' AND NEW.status IN ('approved', 'rejected')) THEN
+        RAISE EXCEPTION 'Status cannot change from % to %', OLD.status, NEW.status
+              USING ERRCODE = 'check_violation';
+    END IF;
+    NEW.decided_at := now();
     RETURN NEW;
 END;
 $$;
 
 CREATE TRIGGER check_project
-BEFORE INSERT OR UPDATE OF faculty_id, subject_id, status, marks ON projects
-FOR EACH ROW EXECUTE FUNCTION trg_check_project();
+BEFORE UPDATE OF status ON projects
+FOR EACH ROW
+WHEN (NEW.status IS DISTINCT FROM OLD.status)
+EXECUTE FUNCTION trg_check_project();
 
 
--- 2. Only students can be team members.
+-- 3. Team members are students, each in at most one live project per submission
+--    link (a rejected project doesn't count, so the team can try again). Marks go
+--    to each student only once the project is approved, up to the link's max_marks.
 CREATE FUNCTION trg_check_member() RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = pbl, pg_temp
 AS $$
+DECLARE
+    v_project  projects;
+    v_max      numeric;
+    v_prn      varchar;
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = NEW.user_id AND u.role = 'student') THEN
-        RAISE EXCEPTION 'Only students can be team members' USING ERRCODE = 'check_violation';
+    SELECT * INTO v_project FROM projects p WHERE p.project_id = NEW.project_id;
+
+    IF TG_OP = 'INSERT' OR NEW.user_id IS DISTINCT FROM OLD.user_id THEN
+        SELECT u.prn INTO v_prn FROM users u WHERE u.user_id = NEW.user_id AND u.role = 'student';
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Only students can be team members' USING ERRCODE = 'check_violation';
+        END IF;
+
+        -- Two submissions with the same student at the same moment would both pass
+        -- the check below, so they take turns: the lock is held until COMMIT.
+        PERFORM pg_advisory_xact_lock(v_project.submission_link_id, NEW.user_id);
+        IF v_project.status <> 'rejected' AND EXISTS (SELECT 1
+                     FROM project_members pm
+                     JOIN projects p ON p.project_id = pm.project_id
+                    WHERE pm.user_id = NEW.user_id
+                      AND pm.project_id <> NEW.project_id
+                      AND p.submission_link_id = v_project.submission_link_id
+                      AND p.status <> 'rejected') THEN
+            RAISE EXCEPTION 'PRN % already has a project in this submission link', v_prn
+                  USING ERRCODE = 'unique_violation';
+        END IF;
     END IF;
+
+    IF NEW.marks IS NOT NULL THEN
+        IF v_project.status <> 'approved' THEN
+            RAISE EXCEPTION 'Only approved projects can be marked (this one is %)', v_project.status
+                  USING ERRCODE = 'check_violation';
+        END IF;
+
+        SELECT l.max_marks INTO v_max FROM submission_links l WHERE l.submission_link_id = v_project.submission_link_id;
+        IF NEW.marks > v_max THEN
+            RAISE EXCEPTION 'Marks % are more than the maximum % for this submission', NEW.marks, v_max
+                  USING ERRCODE = 'check_violation';
+        END IF;
+    END IF;
+
     RETURN NEW;
 END;
 $$;
 
 CREATE TRIGGER check_member
-BEFORE INSERT OR UPDATE OF user_id ON project_members
+BEFORE INSERT OR UPDATE OF user_id, marks ON project_members
 FOR EACH ROW EXECUTE FUNCTION trg_check_member();
 
 
--- 3. Approving a project that is a near duplicate of an existing one needs a
+-- 4. Approving a project that is a near duplicate of an existing one needs a
 --    review note that says what is different about it.
 CREATE FUNCTION trg_check_near_duplicate() RETURNS trigger
 LANGUAGE plpgsql
@@ -110,7 +163,7 @@ WHEN (OLD.status = 'submitted' AND NEW.status = 'approved')
 EXECUTE FUNCTION trg_check_near_duplicate();
 
 
--- 4. An embedding describes the title and abstract it was made from. When either
+-- 5. An embedding describes the title and abstract it was made from. When either
 --    changes, the old embedding is cleared and embed_projects.py makes a fresh one.
 CREATE FUNCTION trg_clear_stale_embedding() RETURNS trigger
 LANGUAGE plpgsql
@@ -129,7 +182,7 @@ WHEN (OLD.title IS DISTINCT FROM NEW.title OR OLD.abstract IS DISTINCT FROM NEW.
 EXECUTE FUNCTION trg_clear_stale_embedding();
 
 
--- 5. A project keeps its report. A new report replaces the old one (an UPDATE of
+-- 6. A project keeps its report. A new report replaces the old one (an UPDATE of
 --    the same row), but the row itself can only go when the whole project is deleted.
 CREATE FUNCTION trg_keep_report() RETURNS trigger
 LANGUAGE plpgsql

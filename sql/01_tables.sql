@@ -1,5 +1,5 @@
 -- 01_tables.sql
--- Extensions, the pbl schema and the eight tables.
+-- Extensions, the pbl schema and the nine tables.
 --
 -- Everything lives in its own schema, "pbl". On Supabase only the "public" schema
 -- is exposed through the auto-generated REST API, so these tables can't be reached
@@ -50,8 +50,8 @@ CREATE TABLE users (
     CONSTRAINT only_faculty_are_admins CHECK (NOT is_admin OR role = 'faculty')
 );
 
--- Each subject marks its project out of its own total: a lab might give 33, a
--- theory subject 5. The faculty member enters any value from 0 to that total.
+-- Each subject has its usual total: a lab might give 33, a theory subject 5. A new
+-- submission link starts with this total, and the faculty member can change it.
 CREATE TABLE subjects (
     subject_id  INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     code        VARCHAR(20)  NOT NULL UNIQUE CHECK (code ~ '^[A-Z0-9-]{2,20}$'),   -- 'DBMS-PBL'
@@ -59,45 +59,68 @@ CREATE TABLE subjects (
     max_marks   NUMERIC(5,1) NOT NULL CHECK (max_marks > 0)
 );
 
--- A team submits its finished project, report included, to one subject and one
--- faculty member. That faculty member approves or rejects it and gives the marks.
-CREATE TABLE projects (
-    project_id     INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    title          VARCHAR(200) NOT NULL CHECK (length(btrim(title)) >= 5),
-    abstract       TEXT         NOT NULL CHECK (length(abstract) BETWEEN 30 AND 3000),
-    subject_id     INT          NOT NULL REFERENCES subjects(subject_id),
-    faculty_id     INT          NOT NULL REFERENCES users(user_id),       -- must be faculty (trigger)
-    academic_year  VARCHAR(7)   NOT NULL,                                 -- '2026-27'
-    project_type   VARCHAR(10)  NOT NULL CHECK (project_type IN ('software', 'hardware', 'both')),
-    status         VARCHAR(10)  NOT NULL DEFAULT 'submitted'
-                   CHECK (status IN ('submitted', 'approved', 'rejected')),
-    review_note    VARCHAR(1000),
-    decided_at     TIMESTAMPTZ,                         -- when the faculty member approved or rejected it (trigger)
-    marks          NUMERIC(5,1) CHECK (marks >= 0),     -- the upper limit is the subject's max_marks (trigger)
-    marks_public   BOOLEAN      NOT NULL DEFAULT false, -- marks are seen by the team and faculty unless the team shows them
-    search_text    TSVECTOR GENERATED ALWAYS AS (
-                       setweight(to_tsvector('english', title), 'A') ||
-                       setweight(to_tsvector('english', abstract), 'B')
-                   ) STORED,
-    embedding      vector(384),                         -- made by Python from title + abstract; NULL until then
-    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
+-- A faculty member opens a submission link for one class: the subject, the class
+-- (course, year, division), what the submission is for ('Semester PBL', 'LCA 1') and
+-- what each student's marks are out of. Students open the link, sign in with their
+-- college account and submit there, so every project counts towards exactly one
+-- class's submission. The code is the random part of the URL (/s/<code>); it is
+-- made here, never by the app, so nobody can pick an easy one to guess.
+CREATE TABLE submission_links (
+    submission_link_id  INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    code                VARCHAR(16)  NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(6), 'hex')
+                        CHECK (code ~ '^[a-z0-9]{6,16}$'),
+    faculty_id          INT          NOT NULL REFERENCES users(user_id),   -- must be faculty (trigger)
+    subject_id          INT          NOT NULL REFERENCES subjects(subject_id),
+    academic_year       VARCHAR(7)   NOT NULL,                             -- '2026-27'
+    class_name          VARCHAR(80)  NOT NULL CHECK (length(btrim(class_name)) >= 2),   -- 'TY ECE Div A'
+    purpose             VARCHAR(100) NOT NULL CHECK (length(btrim(purpose)) >= 2),      -- 'Semester PBL'
+    max_marks           NUMERIC(5,1) NOT NULL CHECK (max_marks > 0),       -- the subject's, if not given (trigger)
+    is_open             BOOLEAN      NOT NULL DEFAULT true,                -- a closed link takes no new projects
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
 
     -- Postgres tests CHECK constraints in alphabetical order of their names, so the
     -- format check always runs before the ::int casts in the sequence check.
     CONSTRAINT academic_year_format   CHECK (academic_year ~ '^20[0-9]{2}-[0-9]{2}$'),
-    CONSTRAINT academic_year_sequence CHECK (right(academic_year, 2)::int = (left(academic_year, 4)::int + 1) % 100),
+    CONSTRAINT academic_year_sequence CHECK (right(academic_year, 2)::int = (left(academic_year, 4)::int + 1) % 100)
+);
+
+-- A team submits its finished project, report included, through one submission
+-- link. The link's faculty member approves or rejects it and gives each student
+-- marks. Subject, faculty member and year are the link's, so they aren't repeated here.
+CREATE TABLE projects (
+    project_id          INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    submission_link_id  INT          NOT NULL REFERENCES submission_links(submission_link_id),
+    title               VARCHAR(200) NOT NULL CHECK (length(btrim(title)) >= 5),
+    abstract            TEXT         NOT NULL CHECK (length(abstract) BETWEEN 30 AND 3000),
+    project_type        VARCHAR(10)  NOT NULL CHECK (project_type IN ('software', 'hardware', 'both')),
+    status              VARCHAR(10)  NOT NULL DEFAULT 'submitted'
+                        CHECK (status IN ('submitted', 'approved', 'rejected')),
+    review_note         VARCHAR(1000),
+    decided_at          TIMESTAMPTZ,                         -- when the faculty member approved or rejected it (trigger)
+    marks_public        BOOLEAN      NOT NULL DEFAULT false, -- the team score is seen by the team and faculty unless the team shows it
+    search_text         TSVECTOR GENERATED ALWAYS AS (
+                            setweight(to_tsvector('english', title), 'A') ||
+                            setweight(to_tsvector('english', abstract), 'B')
+                        ) STORED,
+    embedding           vector(384),                         -- made by Python from title + abstract; NULL until then
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+
     CONSTRAINT decided_once_reviewed  CHECK ((status = 'submitted') = (decided_at IS NULL)),
     CONSTRAINT decided_after_submit   CHECK (decided_at >= created_at)
 );
 
 -- A team can have any number of students, and a student can be in several projects
--- in the same year (one per subject is normal). Deleting a project removes its
+-- in the same year, but only one live project per submission link (trigger; a
+-- rejected one doesn't count, so the team can submit again). Each student gets their
+-- own marks, from 0 to the link's max_marks, once the project is approved (trigger);
+-- the team score is the average (team_marks view). Deleting a project removes its
 -- members, links, tags and file records (ON DELETE CASCADE). Deleting a user who is
 -- still in a team is refused, because that would rewrite history.
 CREATE TABLE project_members (
-    project_id  INT     NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
-    user_id     INT     NOT NULL REFERENCES users(user_id),               -- must be a student (trigger)
-    is_leader   BOOLEAN NOT NULL DEFAULT false,
+    project_id  INT          NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
+    user_id     INT          NOT NULL REFERENCES users(user_id),          -- must be a student (trigger)
+    is_leader   BOOLEAN      NOT NULL DEFAULT false,
+    marks       NUMERIC(5,1) CHECK (marks >= 0),
     PRIMARY KEY (project_id, user_id)
 );
 

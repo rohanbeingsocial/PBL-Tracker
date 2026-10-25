@@ -44,18 +44,19 @@ RETURNS TABLE (project_id int, title varchar, academic_year varchar, subject var
 LANGUAGE sql STABLE
 SET search_path = pbl, pg_temp
 AS $$
-    SELECT m.project_id, m.title, m.academic_year, s.code, m.status, m.rank,
+    SELECT m.project_id, m.title, l.academic_year, s.code, m.status, m.rank,
            ts_headline('english', m.abstract, m.query,
                        'StartSel=«, StopSel=», MaxWords=40, MinWords=20, MaxFragments=2')
     FROM (
-        SELECT p.project_id, p.title, p.abstract, p.academic_year, p.subject_id, p.status,
+        SELECT p.project_id, p.title, p.abstract, p.submission_link_id, p.status,
                q AS query, ts_rank_cd(p.search_text, q) AS rank
         FROM projects p, websearch_to_tsquery('english', query_text) AS q
         WHERE p.search_text @@ q
         ORDER BY rank DESC, p.project_id
         LIMIT how_many
     ) AS m
-    JOIN subjects s ON s.subject_id = m.subject_id
+    JOIN submission_links l ON l.submission_link_id = m.submission_link_id
+    JOIN subjects s         ON s.subject_id = l.subject_id
     ORDER BY m.rank DESC, m.project_id;
 $$;
 
@@ -69,11 +70,12 @@ RETURNS TABLE (project_id int, title varchar, academic_year varchar, subject var
 LANGUAGE sql STABLE
 SET search_path = pbl, extensions, pg_temp
 AS $$
-    SELECT p.project_id, p.title, p.academic_year, s.code, p.status,
+    SELECT p.project_id, p.title, l.academic_year, s.code, p.status,
            1 - (p.embedding <=> query_embedding::vector(384)),
            similarity_band(1 - (p.embedding <=> query_embedding::vector(384)))
     FROM projects p
-    JOIN subjects s ON s.subject_id = p.subject_id
+    JOIN submission_links l ON l.submission_link_id = p.submission_link_id
+    JOIN subjects s         ON s.subject_id = l.subject_id
     WHERE p.embedding IS NOT NULL
       AND p.project_id IS DISTINCT FROM exclude_project
     ORDER BY p.embedding <=> query_embedding::vector(384)
@@ -110,13 +112,14 @@ AS $$
               ORDER BY distance          -- this ORDER BY + LIMIT can use the HNSW index
               LIMIT 50) AS n
     )
-    SELECT p.project_id, p.title, p.academic_year, s.code, p.status,
+    SELECT p.project_id, p.title, l.academic_year, s.code, p.status,
            k.rank_no, m.rank_no, m.similarity, similarity_band(m.similarity),
            coalesce(1.0 / (60 + k.rank_no), 0) + coalesce(1.0 / (60 + m.rank_no), 0) AS score
     FROM keyword k
     FULL JOIN meaning m ON m.project_id = k.project_id
-    JOIN projects p ON p.project_id = coalesce(k.project_id, m.project_id)
-    JOIN subjects s ON s.subject_id = p.subject_id
+    JOIN projects p         ON p.project_id = coalesce(k.project_id, m.project_id)
+    JOIN submission_links l ON l.submission_link_id = p.submission_link_id
+    JOIN subjects s         ON s.subject_id = l.subject_id
     WHERE k.project_id IS NOT NULL OR similarity_band(m.similarity) <> 'different'
     ORDER BY score DESC, p.project_id
     LIMIT how_many;
@@ -129,15 +132,15 @@ $$;
 -- in the bucket first and passes their names, paths and sizes here.
 --
 -- SECURITY DEFINER means it runs with the rights of the function's owner, so the
--- app's login needs no INSERT rights on projects. The status is always 'submitted'
--- and the year is always the current one, whatever the caller sends. The student
--- who submits it becomes the team leader.
+-- app's login needs no INSERT rights on projects. The project goes in through a
+-- submission link, which fixes the subject, faculty member and year; the status is
+-- always 'submitted', whatever the caller sends. The student who submits it becomes
+-- the team leader.
 CREATE FUNCTION submit_project(
     p_leader_id     int,
     p_title         text,
     p_abstract      text,
-    p_subject_id    int,
-    p_faculty_id    int,
+    p_link_code     text,
     p_member_prns   text[],
     p_project_type  text,
     p_tags          text[],
@@ -156,7 +159,7 @@ SECURITY DEFINER
 SET search_path = pbl, extensions, pg_temp
 AS $$
 DECLARE
-    v_year        varchar := current_academic_year();
+    v_link        submission_links;
     v_project_id  int;
     v_unknown     text;
 BEGIN
@@ -164,8 +167,12 @@ BEGIN
         RAISE EXCEPTION 'Only a student can submit a project' USING ERRCODE = 'check_violation';
     END IF;
 
-    IF NOT EXISTS (SELECT 1 FROM users u WHERE u.user_id = p_faculty_id AND u.role = 'faculty' AND u.is_active) THEN
-        RAISE EXCEPTION 'Choose a faculty member from the current list' USING ERRCODE = 'check_violation';
+    SELECT * INTO v_link FROM submission_links l WHERE l.code = p_link_code;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'No submission link with this code' USING ERRCODE = 'check_violation';
+    END IF;
+    IF NOT v_link.is_open THEN
+        RAISE EXCEPTION 'This submission link is closed. Ask your faculty member.' USING ERRCODE = 'check_violation';
     END IF;
 
     SELECT string_agg(m, ', ') INTO v_unknown
@@ -184,16 +191,18 @@ BEGIN
     END IF;
 
     IF EXISTS (SELECT 1 FROM projects p
-               WHERE p.subject_id = p_subject_id AND p.academic_year = v_year
+               WHERE p.submission_link_id = v_link.submission_link_id
                  AND lower(p.title) = lower(btrim(p_title))) THEN
-        RAISE EXCEPTION 'A project with this title already exists for this subject in %', v_year
+        RAISE EXCEPTION 'A project with this title has already been submitted through this link'
               USING ERRCODE = 'unique_violation';
     END IF;
 
-    INSERT INTO projects (title, abstract, subject_id, faculty_id, academic_year, project_type, embedding)
-    VALUES (btrim(p_title), btrim(p_abstract), p_subject_id, p_faculty_id, v_year, p_project_type,
+    INSERT INTO projects (submission_link_id, title, abstract, project_type, embedding)
+    VALUES (v_link.submission_link_id, btrim(p_title), btrim(p_abstract), p_project_type,
             p_embedding::vector(384))
     RETURNING project_id INTO v_project_id;
+
+    -- check_member() refuses a student who already has a live project in this link.
 
     INSERT INTO project_members (project_id, user_id, is_leader)
     VALUES (v_project_id, p_leader_id, true);
