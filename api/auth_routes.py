@@ -14,9 +14,9 @@ router = APIRouter(prefix="/api")
 # admin, so it is only for the sample data on your own laptop.
 DEMO_ON = optional("DEMO_SWITCHER").lower() in {"1", "true", "on", "yes"}
 DEMO_ACCOUNTS = [
-    {"login": "1032240101", "name": "Rohan Deogaonkar", "role": "student",
+    {"login": "1262241783", "name": "Rohan Deogaonkar", "role": "student",
      "shows": "CCTV attendance project waiting for review, and the Smart Water Tank project"},
-    {"login": "1032240102", "name": "Akash Mane", "role": "student",
+    {"login": "1262241766", "name": "Krishna Bhand", "role": "student",
      "shows": "No project this year yet: open a submission link to submit one"},
     {"login": "srao@mitwpu.edu.in", "name": "Prof. S. Rao", "role": "faculty",
      "shows": "ML-PBL submission link for TY ECE Div B; reviews Rohan's CCTV attendance project"},

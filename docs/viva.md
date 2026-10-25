@@ -15,7 +15,7 @@ All sample accounts use the `SEED_PASSWORD` from `.env`. With `DEMO_SWITCHER=on`
 sidebar's "Switch account" menu instead of signing out and in again. Keep two small PDFs
 and a .pptx on the desktop for steps 4 and 5.
 
-1. **The problem (30 s).** Sign in as student `1032240102` (Akash Mane). Trends page:
+1. **The problem (30 s).** Sign in as student `1262241766` (Krishna Bhand). Trends page:
    the most used tags per year, then "Ideas that keep coming back". Face recognition
    attendance was done in 2022-23 and 2025-26, and a third team submitted it again this year.
 2. **Keywords vs. meaning (1 min).** Search page, type *predict heart attack risk from
@@ -26,7 +26,7 @@ and a .pptx on the desktop for steps 4 and 5.
    ML-PBL link for TY ECE Div B is there, with Rohan's team's project waiting. Make a new
    one: ML-PBL, class *TY ECE Div A*, for *LCA 2*, each student out of 10. Its page shows
    the URL with a random code; press Copy link.
-4. **Submit through the link (1 min).** Switch to student `1032240102` (Akash Mane) and
+4. **Submit through the link (1 min).** Switch to student `1262241766` (Krishna Bhand) and
    open the copied link. The page says who it is for and lists the class's projects.
    Title *Attendance from classroom CCTV*, abstract *Recognise student faces from the CCTV
    camera in each classroom and mark attendance automatically during the first ten
@@ -36,7 +36,7 @@ and a .pptx on the desktop for steps 4 and 5.
    one of the PDFs and submit. The project page opens with the report on the left, marked
    "Waiting for review". Open the link again: it says the team has submitted, and shows
    no second form.
-5. **Links and files (1 min).** Sign in as `1032240101` (Rohan). On the Smart Water Tank
+5. **Links and files (1 min).** Sign in as `1262241783` (Rohan). On the Smart Water Tank
    project, add a working demo link, replace the report with the other PDF and add the
    .pptx as the presentation. Try a .txt as the report: refused. The report can only be
    replaced, never removed.
@@ -48,9 +48,9 @@ and a .pptx on the desktop for steps 4 and 5.
 7. **Marks (1 min).** Still on that project, each of the four students has a marks box,
    out of 33. Type 34 for one: refused with the database's message. Give 28, 26, 27 and
    29: the team score shows as 27.5. Back on the link's page, Download marks gives a CSV
-   with every student's PRN, name, project, marks and team score. Switch to Akash, who
+   with every student's PRN, name, project, marks and team score. Switch to Krishna, who
    isn't in the team: no marks on the project page. Switch to Rohan, who sees their own
-   marks and the team score; turn on "Show our team score to everyone", and Akash now
+   marks and the team score; turn on "Show our team score to everyone", and Krishna now
    sees 27.5 / 33.
 8. **Admin (1 min).** Sign in as `nshaikh@mitwpu.edu.in`. Subjects: CN-TH is usually out of
    5, and a new subject can be added with any maximum; a link starts with its subject's. People: add a student, which shows a

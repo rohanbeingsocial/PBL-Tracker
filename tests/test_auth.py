@@ -5,7 +5,7 @@ import pytest
 from finder.config import require
 from tests.helpers import error_of, user_id
 
-STUDENT, STUDENT_EMAIL = "1032240101", "rohan.deogaonkar@mitwpu.edu.in"
+STUDENT, STUDENT_EMAIL = "1262241783", "rohan.deogaonkar@mitwpu.edu.in"
 FACULTY, LEFT_COLLEGE, ADMIN = "akulkarni@mitwpu.edu.in", "kmenon@mitwpu.edu.in", "nshaikh@mitwpu.edu.in"
 
 

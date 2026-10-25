@@ -298,8 +298,8 @@ Sign in with one of the sample users and the `SEED_PASSWORD` from your `.env`:
 
 | Role | Sign in as | Shows |
 |---|---|---|
-| Student | `1032240101` (Rohan Deogaonkar) | A submission very close to an earlier project, waiting for review, and an approved project |
-| Student | `1032240102` (Akash Mane) | No project this year: open a submission link to submit one |
+| Student | `1262241783` (Rohan Deogaonkar) | A submission very close to an earlier project, waiting for review, and an approved project |
+| Student | `1262241766` (Krishna Bhand) | No project this year: open a submission link to submit one |
 | Faculty | `srao@mitwpu.edu.in` (Prof. S. Rao) | The ML-PBL submission link for TY ECE Div B, with Rohan's submission waiting for review |
 | Faculty | `riyer@mitwpu.edu.in` (Prof. R. Iyer) | Rohan's approved project, students not graded yet |
 | Admin | `nshaikh@mitwpu.edu.in` (Dr. N. Shaikh, PBL coordinator) | Everything, plus People and Subjects |

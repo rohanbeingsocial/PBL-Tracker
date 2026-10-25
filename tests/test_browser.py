@@ -37,7 +37,7 @@ from scripts import sample_reports  # noqa: E402
 
 expect.set_options(timeout=15_000)
 
-ROHAN, AKASH = "1032240101", "1032240102"
+ROHAN, KRISHNA = "1262241783", "1262241766"
 TEAMMATES = "1032240105, 1032240106"
 RAO, IYER, ADMIN = "srao@mitwpu.edu.in", "riyer@mitwpu.edu.in", "nshaikh@mitwpu.edu.in"
 CLASS = "TY ECE Div E2E"
@@ -100,9 +100,9 @@ def made():
 def files(tmp_path_factory) -> dict[str, Path]:
     folder = tmp_path_factory.mktemp("files")
     contents = {
-        "report.pdf": sample_reports.report(CCTV, "2026-27", "ML-PBL", "Prof. S. Rao", ["Akash Mane"], CCTV_ABSTRACT),
+        "report.pdf": sample_reports.report(CCTV, "2026-27", "ML-PBL", "Prof. S. Rao", ["Krishna Bhand"], CCTV_ABSTRACT),
         "report-v2.pdf": sample_reports.report(f"{CCTV}, second version", "2026-27", "ML-PBL", "Prof. S. Rao",
-                                               ["Akash Mane"], CCTV_ABSTRACT),
+                                               ["Krishna Bhand"], CCTV_ABSTRACT),
         "laundry.pdf": sample_reports.report("Hostel Laundry Slot Booking", "2026-27", "ML-PBL", "Prof. S. Rao",
                                              ["Rohan Deogaonkar"], LAUNDRY_ABSTRACT),
         "slides.pptx": b"PK\x03\x04 slides for the review",
@@ -177,8 +177,8 @@ def test_signing_in_with_a_password_and_out_again(open_as):
 
 def test_sample_accounts_and_the_demo_switcher(open_as):
     page = open_as(None)
-    page.get_by_role("button", name=re.compile("^Akash Mane")).click()
-    expect(heading(page, "Hello, Akash")).to_be_visible()
+    page.get_by_role("button", name=re.compile("^Krishna Bhand")).click()
+    expect(heading(page, "Hello, Krishna")).to_be_visible()
     switch = page.get_by_label("Switch account (demo)")
     switch.select_option(RAO)
     expect(heading(page, "Hello, Prof. S. Rao")).to_be_visible()
@@ -372,7 +372,7 @@ def test_faculty_make_a_submission_link(open_as, made):
 
 
 def test_a_student_submits_through_the_link(open_as, made, files):
-    page = open_as(AKASH, "/submit")
+    page = open_as(KRISHNA, "/submit")
     expect(heading(page, "Submit a project")).to_be_visible()
     pasted = page.get_by_label("Submission link")
     pasted.fill("the link from the class group!")
@@ -424,7 +424,7 @@ def test_a_student_submits_through_the_link(open_as, made, files):
     expect(heading(page, CCTV)).to_be_visible()
     details = page.locator(".details")
     expect(details.locator(".status")).to_have_text("Waiting for review")
-    expect(details.locator(".facts")).to_contain_text("Akash Mane")
+    expect(details.locator(".facts")).to_contain_text("Krishna Bhand")
     expect(details.locator(".facts")).to_contain_text(made["tag"])
     expect(details.get_by_role("link", name="GitHub")).to_have_attribute("href", "https://github.com/example/attendance")
     expect(page.locator(".project canvas").first).to_be_visible(timeout=20_000)     # the report, drawn by pdf.js
@@ -454,7 +454,7 @@ def test_a_waiting_project_is_seen_only_by_its_team_and_faculty(open_as, made):
 
 
 def test_the_team_changes_its_links_and_files(open_as, made, files):
-    page = open_as(AKASH, f"/projects/{made['cctv']}")
+    page = open_as(KRISHNA, f"/projects/{made['cctv']}")
     page.get_by_role("button", name="Add or change links and files").click()
     page.get_by_label("Link label").fill("Docs")
     page.get_by_label("Link URL").fill("docs.example.com")
@@ -514,13 +514,13 @@ def test_faculty_review_grade_change_close_and_export(open_as, made):
     expect(page.get_by_text("Marks, out of 10 each")).to_be_visible()
     boxes = page.get_by_label(re.compile("^Marks for "))
     expect(boxes).to_have_count(3)
-    akash = page.get_by_label("Marks for Akash Mane")
-    others = [b for b in boxes.all() if b.get_attribute("aria-label") != "Marks for Akash Mane"]
+    krishna = page.get_by_label("Marks for Krishna Bhand")
+    others = [b for b in boxes.all() if b.get_attribute("aria-label") != "Marks for Krishna Bhand"]
     save = page.get_by_role("button", name="Save marks")
-    akash.fill("11")
+    krishna.fill("11")
     save.click()
     alert(page, "more than the maximum 10.0 for this submission")
-    akash.fill("8")
+    krishna.fill("8")
     save.click()
     toast(page, "Marks saved.")
     expect(page.get_by_text("1 of 3 students graded.")).to_be_visible()
@@ -565,9 +565,9 @@ def test_faculty_review_grade_change_close_and_export(open_as, made):
     rows = list(csv.reader(io.StringIO(Path(download.value.path()).read_text(encoding="utf-8-sig"))))
     assert rows[0] == ["PRN", "Student", "Project", "Status", "Marks", "Team score", "Out of"]
     sheet = {r[0]: r for r in rows[1:]}
-    assert sorted(float(sheet[prn][4]) for prn in [AKASH, *TEAMMATES.split(", ")]) == [7, 8, 9]
-    assert float(sheet[AKASH][4]) == 8 and float(sheet[AKASH][5]) == 8 and float(sheet[AKASH][6]) == 10
-    assert sheet[AKASH][2] == CCTV and sheet[AKASH][3] == "approved"
+    assert sorted(float(sheet[prn][4]) for prn in [KRISHNA, *TEAMMATES.split(", ")]) == [7, 8, 9]
+    assert float(sheet[KRISHNA][4]) == 8 and float(sheet[KRISHNA][5]) == 8 and float(sheet[KRISHNA][6]) == 10
+    assert sheet[KRISHNA][2] == CCTV and sheet[KRISHNA][3] == "approved"
 
 
 def test_a_rejected_team_can_submit_again(open_as, made, files):
@@ -598,29 +598,29 @@ def test_a_rejected_team_can_submit_again(open_as, made, files):
 
 def test_students_see_their_own_marks_and_choose_to_share_the_team_score(open_as, made):
     project = f"/projects/{made['cctv']}"
-    akash, rohan = open_as(AKASH, project), open_as(ROHAN, project)
+    krishna, rohan = open_as(KRISHNA, project), open_as(ROHAN, project)
     score = re.compile(r"^8(\.0)? / 10$")
-    expect(akash.get_by_text("Your marks")).to_be_visible()
-    expect(akash.locator(".marks-big")).to_have_count(2)
-    for big in akash.locator(".marks-big").all():
+    expect(krishna.get_by_text("Your marks")).to_be_visible()
+    expect(krishna.locator(".marks-big")).to_have_count(2)
+    for big in krishna.locator(".marks-big").all():
         expect(big).to_have_text(score)
     expect(rohan.get_by_text("Your marks")).to_have_count(0)
     expect(rohan.get_by_text("Only the team and their faculty member can see the marks.")).to_be_visible()
 
-    share = akash.get_by_role("switch", name="Show our team score to everyone")
+    share = krishna.get_by_role("switch", name="Show our team score to everyone")
     expect(share).to_have_attribute("aria-checked", "false")
     share.click()
-    toast(akash, "The team score is now shown to everyone.")
+    toast(krishna, "The team score is now shown to everyone.")
     expect(share).to_have_attribute("aria-checked", "true")
     rohan.reload()
     expect(rohan.locator(".marks-big")).to_have_text(score)
     share.click()
-    toast(akash, "The team score is now shown only to the team and faculty.")
+    toast(krishna, "The team score is now shown only to the team and faculty.")
     rohan.reload()
     expect(rohan.get_by_text("Only the team and their faculty member can see the marks.")).to_be_visible()
 
-    akash.goto(URL + "/")
-    tile = akash.locator("a.project-tile").filter(has_text=CCTV)
+    krishna.goto(URL + "/")
+    tile = krishna.locator("a.project-tile").filter(has_text=CCTV)
     expect(tile).to_contain_text("8 / 10")
     expect(tile.locator(".step.done")).to_have_count(3)
 
@@ -655,7 +655,7 @@ def test_admin_overview_and_the_missing_embeddings(open_as, made):
 
     page.goto(f"{URL}/projects/{made['cctv']}")
     marks = page.locator(".card").filter(has_text="Team score")
-    expect(marks).to_contain_text("Akash Mane")
+    expect(marks).to_contain_text("Krishna Bhand")
     expect(marks.locator(".row")).to_have_count(3)
 
 

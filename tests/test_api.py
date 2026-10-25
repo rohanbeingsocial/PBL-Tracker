@@ -17,7 +17,7 @@ from api.app import app  # noqa: E402
 from finder import auth, db, storage  # noqa: E402
 from finder.config import require  # noqa: E402
 
-LOGINS = {"student": "1032240101", "akash": "1032240102", "faculty": "srao@mitwpu.edu.in",
+LOGINS = {"student": "1262241783", "krishna": "1262241766", "faculty": "srao@mitwpu.edu.in",
           "iyer": "riyer@mitwpu.edu.in", "admin": "nshaikh@mitwpu.edu.in"}
 PAGES = {
     "student": ["/home", "/reference", "/search", "/trends"],
@@ -64,7 +64,7 @@ def water_tank(account: db.Account) -> dict:
 def submission(code: str, **changes) -> dict:
     form = {"code": code, "title": "Hostel Laundry Slot Booking", "project_type": "software",
             "abstract": "Students book a washing machine slot in the hostel laundry and get a reminder.",
-            "teammates": "1032240102", "github": "https://github.com/example/laundry", "demo": ""}
+            "teammates": "1262241766", "github": "https://github.com/example/laundry", "demo": ""}
     form.update(changes)
     return form
 
@@ -137,12 +137,12 @@ def test_a_waiting_project_is_seen_only_by_its_team_and_faculty(accounts):
     own = client_as(accounts["student"]).get(path).json()
     assert own["status"] == "submitted" and own["closest"]["band"] == "near duplicate"
     assert client_as(accounts["faculty"]).get(path).json()["is_faculty"] is True          # Prof. Rao reviews it
-    assert client_as(accounts["akash"]).get(path).status_code == 404
+    assert client_as(accounts["krishna"]).get(path).status_code == 404
     assert client_as(accounts["iyer"]).get(path).status_code == 404
 
 
 def test_project_page_shows_team_subject_faculty_and_dates(accounts):
-    tank = client_as(accounts["akash"]).get(f"/api/projects/{water_tank(accounts['student'])['project_id']}").json()
+    tank = client_as(accounts["krishna"]).get(f"/api/projects/{water_tank(accounts['student'])['project_id']}").json()
     assert tank["members"].startswith("Rohan Deogaonkar") and tank["faculty"] == "Prof. R. Iyer"
     assert tank["subject"] == "IOT-PBL" and tank["decided_at"] and tank["created_at"]
     assert [f["kind"] for f in tank["files"]] == ["report"]
@@ -152,7 +152,7 @@ def test_project_page_shows_team_subject_faculty_and_dates(accounts):
 def test_each_student_is_marked_and_the_team_score_is_private_until_shown(accounts):
     tank = water_tank(accounts["student"])
     page, marks = f"/api/projects/{tank['project_id']}", f"/api/marks/{tank['project_id']}"
-    iyer, rohan, akash = client_as(accounts["iyer"]), client_as(accounts["student"]), client_as(accounts["akash"])
+    iyer, rohan, krishna = client_as(accounts["iyer"]), client_as(accounts["student"]), client_as(accounts["krishna"])
     team = iyer.get(page).json()
     assert len(team["students"]) == 3 and team["graded"] == 0
     rohan_id = accounts["student"].user_id
@@ -166,14 +166,14 @@ def test_each_student_is_marked_and_the_team_score_is_private_until_shown(accoun
                                                  for st in team["students"]]}).json()
         assert answer["team_score"] == 28
         assert rohan.get(page).json()["team_score"] == 28
-        seen = akash.get(page).json()
+        seen = krishna.get(page).json()
         assert seen["team_score"] is None and seen["marks_hidden"] is True and seen["my_marks"] is None
 
         switch = f"{page}/marks-public"
-        assert akash.put(switch, json={"public": True}).status_code == 403                # not their project
+        assert krishna.put(switch, json={"public": True}).status_code == 403              # not their project
         assert iyer.put(switch, json={"public": True}).status_code == 403                 # only the team decides
         assert rohan.put(switch, json={"public": True}).status_code == 200
-        seen = akash.get(page).json()
+        seen = krishna.get(page).json()
         assert seen["team_score"] == 28 and seen["students"] is None                       # the score, not each student's
     finally:
         rohan.put(f"{page}/marks-public", json={"public": False})
@@ -188,8 +188,8 @@ def test_marks_are_entered_by_the_links_faculty_only(accounts):
     iyer = client_as(accounts["iyer"])
     too_many = iyer.put(path, json={"marks": [{"user_id": accounts["student"].user_id, "marks": 34}]})
     assert too_many.status_code == 400 and "maximum 33.0" in too_many.json()["detail"]
-    outsider = iyer.put(path, json={"marks": [{"user_id": accounts["akash"].user_id, "marks": 20}]})
-    assert outsider.status_code == 422                                                   # Akash isn't in the team
+    outsider = iyer.put(path, json={"marks": [{"user_id": accounts["krishna"].user_id, "marks": 20}]})
+    assert outsider.status_code == 422                                                   # Krishna isn't in the team
 
 
 def test_faculty_cannot_decide_on_someone_elses_project(accounts):
@@ -212,7 +212,7 @@ def test_submitting_through_a_link_then_approving_grading_and_exporting(accounts
     assert sent.json()["faculty"] == "Prof. S. Rao"
     assert len(list(files_here.rglob("*.pdf"))) == 1 and len(list(files_here.rglob("*.pptx"))) == 1
     page = rohan.get(f"/api/projects/{project_id}").json()
-    assert page["status"] == "submitted" and page["members"] == "Rohan Deogaonkar, Akash Mane"
+    assert page["status"] == "submitted" and page["members"] == "Rohan Deogaonkar, Krishna Bhand"
     assert page["purpose"] == "Test submission" and page["class_name"] == "TY ECE Div T"
     assert page["links"][0]["label"] == "GitHub"
     assert project_id in [p["project_id"] for p in rao.get("/api/review").json()["waiting"]]
@@ -236,8 +236,8 @@ def test_submitting_through_a_link_then_approving_grading_and_exporting(accounts
     assert "attachment" in sheet.headers["content-disposition"]
     lines = sheet.content.decode("utf-8-sig").splitlines()
     assert lines[0] == "PRN,Student,Project,Status,Marks,Team score,Out of"
-    assert lines[1] == "1032240101,Rohan Deogaonkar,Hostel Laundry Slot Booking,approved,31,28.5,33"
-    assert lines[2] == "1032240102,Akash Mane,Hostel Laundry Slot Booking,approved,26,28.5,33"
+    assert lines[1] == "1262241783,Rohan Deogaonkar,Hostel Laundry Slot Booking,approved,31,28.5,33"
+    assert lines[2] == "1262241766,Krishna Bhand,Hostel Laundry Slot Booking,approved,26,28.5,33"
 
 
 def test_a_closed_or_unknown_link_takes_no_projects(accounts, files_here, rao_link):
@@ -261,7 +261,7 @@ def test_students_see_a_links_approved_projects_and_their_own(accounts):
                             (cctv["submission_link_id"],)).fetchone()[0]
     own = client_as(accounts["student"]).get(f"/api/s/{code}").json()
     assert own["faculty"] == "Prof. S. Rao" and own["is_open"] and own["my_project"] == cctv["project_id"]
-    other = client_as(accounts["akash"]).get(f"/api/s/{code}").json()
+    other = client_as(accounts["krishna"]).get(f"/api/s/{code}").json()
     assert other["my_project"] is None and other["waiting"] >= 1
     assert all(p["status"] == "approved" for p in other["projects"])         # waiting projects stay private
     assert client_as(accounts["faculty"]).get(f"/api/s/{code}").json()["is_owner"] is True
@@ -324,7 +324,7 @@ def test_a_failed_submission_leaves_no_files_behind(accounts, files_here, rao_li
 def test_the_report_can_be_read_in_the_browser(accounts):
     tank = water_tank(accounts["student"])
     report = next(f for f in tank["files"] if f["kind"] == "report")
-    client = client_as(accounts["akash"])
+    client = client_as(accounts["krishna"])
     inline = client.get(f"/api/files/{report['file_id']}", params={"inline": "true"})
     assert inline.content.startswith(b"%PDF")
     assert inline.headers["content-disposition"].startswith("inline")
@@ -363,9 +363,9 @@ def test_presentation_upload_download_and_delete(accounts, files_here):
     file_id = uploaded.json()["file_id"]
     try:
         assert len(list(files_here.rglob("*.pptx"))) == 1          # the bytes are in storage, not the database
-        download = client_as(accounts["akash"]).get(f"/api/files/{file_id}")     # anyone signed in can read it
+        download = client_as(accounts["krishna"]).get(f"/api/files/{file_id}")   # anyone signed in can read it
         assert download.content == b"PK slides"
-        assert client_as(accounts["akash"]).delete(f"/api/files/{file_id}").status_code == 403
+        assert client_as(accounts["krishna"]).delete(f"/api/files/{file_id}").status_code == 403
     finally:
         assert student.delete(f"/api/files/{file_id}").status_code == 200
     assert not list(files_here.rglob("*.pptx"))

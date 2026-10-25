@@ -8,12 +8,12 @@ INSERT INTO project_members (project_id, user_id)
 SELECT p.project_id, u.user_id
 FROM projects p, users u
 WHERE p.title = 'ECE Lab Component Tracker'
-  AND u.prn IN ('1032240102', '1032240103', '1032240104');
+  AND u.prn IN ('1262241766', '1032240103', '1032240104');
 INSERT 0 3
 SELECT title, members FROM project_cards WHERE title = 'ECE Lab Component Tracker';
-           title           |                            members                            
----------------------------+---------------------------------------------------------------
- ECE Lab Component Tracker | Om Pawar, Akash Mane, Neha Karve, Siddhi Ranade, Snehal Nikam
+           title           |                             members                              
+---------------------------+------------------------------------------------------------------
+ ECE Lab Component Tracker | Om Pawar, Krishna Bhand, Neha Karve, Siddhi Ranade, Snehal Nikam
 
 
 === 2. Only students can be team members.
@@ -40,20 +40,20 @@ LIMIT 4;
 
 
 === 4. A link has to belong to a faculty user, and a student has one live project per link.
-UPDATE submission_links SET faculty_id = (SELECT user_id FROM users WHERE prn = '1032240101')
+UPDATE submission_links SET faculty_id = (SELECT user_id FROM users WHERE prn = '1262241783')
 WHERE submission_link_id = (SELECT submission_link_id FROM projects
                             WHERE title = 'Automatic Classroom Attendance from CCTV Footage');
 ERROR:  A submission link has to belong to a faculty user
 CONTEXT:  PL/pgSQL function trg_check_submission_link() line 7 at RAISE
 SELECT submit_project(
-    (SELECT user_id FROM users WHERE prn = '1032240101'),
+    (SELECT user_id FROM users WHERE prn = '1262241783'),
     'Second try at CCTV attendance',
     'Only here to show that a student has one live project per submission link.',
     (SELECT l.code FROM submission_links l JOIN projects p USING (submission_link_id)
      WHERE p.title = 'Automatic Classroom Attendance from CCTV Footage'),
     ARRAY['1032240115'], 'software', ARRAY['Python'], ARRAY[]::text[], ARRAY[]::text[], NULL,
     'report.pdf', 'demo/report.pdf', 1000);
-ERROR:  PRN 1032240101 already has a project in this submission link
+ERROR:  PRN 1262241783 already has a project in this submission link
 CONTEXT:  PL/pgSQL function trg_check_member() line 25 at RAISE
 SQL statement "INSERT INTO project_members (project_id, user_id, is_leader)
     VALUES (v_project_id, p_leader_id, true)"

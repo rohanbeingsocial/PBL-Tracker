@@ -2,7 +2,7 @@
 submit_project(), tested through that same login."""
 from tests.helpers import error_of, new_link, project_id, unit_vector, user_id
 
-ROHAN, AKASH = "1032240101", "1032240102"
+ROHAN, KRISHNA = "1262241783", "1262241766"
 KULKARNI = "akulkarni@mitwpu.edu.in"
 
 
@@ -87,10 +87,10 @@ def test_app_cannot_become_the_owner(app_db):
 
 
 def test_submit_project_saves_everything_in_one_go(app_db, db):
-    new_id = submit(app_db, user_id(db, ROHAN), open_link(app_db), prns=[AKASH],
+    new_id = submit(app_db, user_id(db, ROHAN), open_link(app_db), prns=[KRISHNA],
                     tags=["Flask", "postgresql", "Razorpay"], ppt=("Slides.pptx", "new/1/slides.pptx", 90000))
     card = app_db.execute("SELECT * FROM pbl.project_cards WHERE project_id = %s", (new_id,)).fetchone()
-    assert card["status"] == "submitted" and card["members"] == "Rohan Deogaonkar, Akash Mane"
+    assert card["status"] == "submitted" and card["members"] == "Rohan Deogaonkar, Krishna Bhand"
     assert sorted(f["kind"] for f in card["files"]) == ["ppt", "report"]
     assert card["tags"] == ["Flask", "PostgreSQL", "Razorpay"]     # existing tags matched ignoring case, a new one added
     assert card["links"][0]["url"] == "https://github.com/example/laundry"
@@ -101,7 +101,7 @@ def test_submit_project_saves_everything_in_one_go(app_db, db):
 
 def test_submit_project_saves_nothing_if_one_prn_is_wrong(app_db, db):
     before = app_db.execute("SELECT count(*) AS n FROM pbl.projects").fetchone()["n"]
-    err = error_of(app_db, CALL, (user_id(db, ROHAN), ABSTRACT, open_link(app_db), ["1032240102", "9999999999"],
+    err = error_of(app_db, CALL, (user_id(db, ROHAN), ABSTRACT, open_link(app_db), ["1262241766", "9999999999"],
                                   "r.pdf", "new/1/r.pdf", 100))
     assert err.diag.message_primary == "No student with PRN 9999999999"
     assert app_db.execute("SELECT count(*) AS n FROM pbl.projects").fetchone()["n"] == before
@@ -126,7 +126,7 @@ def test_submit_project_lands_in_the_links_class_as_submitted(app_db, db):
                             WHERE c.project_id = %s""", (new_id,)).fetchone()
     assert row["status"] == "submitted" and row["decided_at"] is None and row["code"] == code
     assert row["faculty"] == "Prof. A. Kulkarni" and row["purpose"] == "Semester PBL retest"
-    err = error_of(app_db, CALL, (user_id(db, AKASH), ABSTRACT, code, [ROHAN],
+    err = error_of(app_db, CALL, (user_id(db, KRISHNA), ABSTRACT, code, [ROHAN],
                                   "r.pdf", "new/1/r.pdf", 100))    # Rohan is already in a project here
     assert err.diag.message_primary == f"PRN {ROHAN} already has a project in this submission link"
 

@@ -1,7 +1,8 @@
 # Sample data
 
-Made up for testing and the demo. Nothing here is a real person, apart from the name of
-the demo student `1032240101` (Rohan Deogaonkar, a team member; PRN and email are made up).
+Made up for testing and the demo. Nothing here is a real person, apart from the two demo
+students `1262241783` (Rohan Deogaonkar) and `1262241766` (Krishna Bhand), who are on the
+team; their emails are made up.
 
 | File | Rows | Columns |
 |---|---|---|

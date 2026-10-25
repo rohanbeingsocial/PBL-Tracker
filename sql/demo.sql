@@ -18,7 +18,7 @@ INSERT INTO project_members (project_id, user_id)
 SELECT p.project_id, u.user_id
 FROM projects p, users u
 WHERE p.title = 'ECE Lab Component Tracker'
-  AND u.prn IN ('1032240102', '1032240103', '1032240104');
+  AND u.prn IN ('1262241766', '1032240103', '1032240104');
 
 SELECT title, members FROM project_cards WHERE title = 'ECE Lab Component Tracker';
 
@@ -37,12 +37,12 @@ ORDER BY academic_year DESC, class_name
 LIMIT 4;
 
 \echo '\n=== 4. A link has to belong to a faculty user, and a student has one live project per link.'
-UPDATE submission_links SET faculty_id = (SELECT user_id FROM users WHERE prn = '1032240101')
+UPDATE submission_links SET faculty_id = (SELECT user_id FROM users WHERE prn = '1262241783')
 WHERE submission_link_id = (SELECT submission_link_id FROM projects
                             WHERE title = 'Automatic Classroom Attendance from CCTV Footage');
 
 SELECT submit_project(
-    (SELECT user_id FROM users WHERE prn = '1032240101'),
+    (SELECT user_id FROM users WHERE prn = '1262241783'),
     'Second try at CCTV attendance',
     'Only here to show that a student has one live project per submission link.',
     (SELECT l.code FROM submission_links l JOIN projects p USING (submission_link_id)

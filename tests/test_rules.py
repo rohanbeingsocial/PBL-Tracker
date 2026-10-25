@@ -1,7 +1,7 @@
 """The business rules from 01_tables.sql and 04_triggers.sql, run as the table owner."""
 from tests.helpers import error_of, new_link, new_project, project_id, set_embedding, unit_vector, user_id
 
-ROHAN, OM, YASH = "1032240101", "1032230011", "1032230013"
+ROHAN, OM, YASH = "1262241783", "1032230011", "1032230013"
 KULKARNI = "akulkarni@mitwpu.edu.in"
 
 
@@ -17,7 +17,7 @@ def give_marks(conn, project, login, marks):
 
 def test_a_team_can_have_any_number_of_members(db):
     lab = project_id(db, "ECE Lab Component Tracker")          # Om and Neha already
-    for prn in ("1032240102", "1032240103", "1032240104", "1032240105"):
+    for prn in ("1262241766", "1032240103", "1032240104", "1032240105"):
         add_member(db, lab, prn)
     count = db.execute("SELECT count(*) AS n FROM pbl.project_members WHERE project_id = %s", (lab,)).fetchone()
     assert count["n"] == 6
