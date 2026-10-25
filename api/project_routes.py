@@ -1,5 +1,6 @@
-"""Pages everyone has after signing in: home, search, a project's own page, submitting
-a project, trends, and the links and files of a project."""
+"""Pages everyone has after signing in: home, search, a project's own page, a
+submission link as students open it, submitting a project through it, trends, and
+the links and files of a project."""
 import re
 import secrets
 from functools import lru_cache
@@ -8,6 +9,7 @@ from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Response, UploadFile
+from fastapi import Path as PathParam
 from fastapi.concurrency import run_in_threadpool
 from psycopg import sql
 from pydantic import BaseModel, Field
@@ -38,7 +40,7 @@ def reference(account: db.Account = session.anyone) -> dict:
                 "SELECT user_id, name FROM pbl.users WHERE role = 'faculty' AND is_active ORDER BY name").fetchall(),
             "tags": conn.execute("SELECT tag_id, name FROM pbl.tags ORDER BY lower(name)").fetchall(),
             "years": [r["academic_year"] for r in
-                      conn.execute("SELECT DISTINCT academic_year FROM pbl.projects ORDER BY 1")],
+                      conn.execute("SELECT DISTINCT academic_year FROM pbl.submission_links ORDER BY 1")],
             "current_year": conn.execute("SELECT pbl.current_academic_year() AS y").fetchone()["y"],
         }
 
@@ -48,10 +50,11 @@ def access(conn, project_id: int, account: db.Account) -> dict:
     in; a project still waiting, or rejected, only to its team, its faculty member and
     the PBL coordinator. Anyone else gets 404, as if it didn't exist."""
     project = conn.execute(
-        """SELECT p.project_id, p.faculty_id, p.status, p.marks_public,
+        """SELECT p.project_id, l.faculty_id, p.status, p.marks_public,
                   EXISTS (SELECT 1 FROM pbl.project_members pm
                           WHERE pm.project_id = p.project_id AND pm.user_id = %s) AS is_member
-           FROM pbl.projects p WHERE p.project_id = %s""",
+           FROM pbl.projects p JOIN pbl.submission_links l USING (submission_link_id)
+           WHERE p.project_id = %s""",
         (account.user_id, project_id)).fetchone()
     if project is None:
         raise HTTPException(404, "No such project.")
@@ -74,32 +77,65 @@ def can_change(conn, project_id: int, account: db.Account) -> dict:
 # Home ---------------------------------------------------------------------------
 
 def student_home(conn, account: db.Account) -> dict:
+    # marks are this student's own; team_score is the team's average.
     mine = conn.execute(
-        """SELECT c.*, p.marks::float8, s.max_marks::float8, pm.is_leader
+        """SELECT c.*, pm.marks::float8, t.team_score::float8, t.max_marks::float8, pm.is_leader
            FROM pbl.project_members pm
            JOIN pbl.project_cards c ON c.project_id = pm.project_id
-           JOIN pbl.projects p      ON p.project_id = pm.project_id
-           JOIN pbl.subjects s      ON s.subject_id = p.subject_id
+           JOIN pbl.team_marks t    ON t.project_id = pm.project_id
            WHERE pm.user_id = %s
            ORDER BY c.academic_year DESC, c.created_at DESC""", (account.user_id,)).fetchall()
-    return {"projects": mine}
+    # The stacks approved projects used in the last two years, for the "what's popular" chart.
+    popular = conn.execute(
+        """SELECT tag, sum(project_count)::int AS projects FROM pbl.tag_trends
+           WHERE academic_year IN (SELECT DISTINCT academic_year FROM pbl.tag_trends
+                                   ORDER BY academic_year DESC LIMIT 2)
+           GROUP BY tag ORDER BY projects DESC, tag LIMIT 6""").fetchall()
+    approved = conn.execute(
+        """SELECT project_id, title, subject, academic_year, faculty, members, decided_at
+           FROM pbl.project_cards WHERE status = 'approved'
+           ORDER BY decided_at DESC, project_id DESC LIMIT 5""").fetchall()
+    return {"projects": mine, "popular": popular, "approved": approved}
 
 
 def faculty_home(conn, account: db.Account) -> dict:
     waiting = conn.execute(
-        """SELECT project_id, title, subject, created_at, closest_title, closest_year, similarity, band
-           FROM pbl.review_queue WHERE faculty_id = %s ORDER BY created_at""",
+        """SELECT q.project_id, q.title, q.subject, c.class_name, q.created_at,
+                  q.closest_title, q.closest_year, q.similarity, q.band
+           FROM pbl.review_queue q JOIN pbl.project_cards c USING (project_id)
+           WHERE q.faculty_id = %s ORDER BY q.created_at""",
         (account.user_id,)).fetchall()
     counts = conn.execute(
-        """SELECT count(*) FILTER (WHERE status = 'approved') AS approved,
-                  count(*) FILTER (WHERE status = 'approved' AND marks IS NOT NULL) AS graded
-           FROM pbl.projects WHERE faculty_id = %s""", (account.user_id,)).fetchone()
+        """SELECT count(*) FILTER (WHERE c.status = 'approved') AS approved,
+                  count(*) FILTER (WHERE c.status = 'rejected') AS rejected,
+                  count(t.team_score)                        AS graded
+           FROM pbl.project_cards c LEFT JOIN pbl.team_marks t USING (project_id)
+           WHERE c.faculty_id = %s""", (account.user_id,)).fetchone()
     to_grade = conn.execute(
-        """SELECT p.project_id, p.title, p.academic_year, s.code AS subject, s.max_marks::float8
-           FROM pbl.projects p JOIN pbl.subjects s ON s.subject_id = p.subject_id
-           WHERE p.faculty_id = %s AND p.status = 'approved' AND p.marks IS NULL
-           ORDER BY p.academic_year DESC, p.title""", (account.user_id,)).fetchall()
-    return {"waiting": waiting, **counts, "to_grade": to_grade}
+        """SELECT c.project_id, c.title, c.academic_year, c.subject, c.class_name, c.purpose,
+                  t.max_marks::float8, t.graded, t.members
+           FROM pbl.project_cards c JOIN pbl.team_marks t USING (project_id)
+           WHERE c.faculty_id = %s AND c.status = 'approved' AND t.team_score IS NULL
+           ORDER BY c.academic_year DESC, c.title""", (account.user_id,)).fetchall()
+    by_subject = conn.execute(
+        """SELECT c.subject,
+                  count(*) FILTER (WHERE c.status = 'approved')  AS approved,
+                  count(*) FILTER (WHERE c.status = 'submitted') AS waiting,
+                  round(avg(t.percent))::int                     AS average_percent
+           FROM pbl.project_cards c LEFT JOIN pbl.team_marks t USING (project_id)
+           WHERE c.faculty_id = %s
+           GROUP BY c.subject ORDER BY c.subject""", (account.user_id,)).fetchall()
+    percents = [r["percent"] for r in conn.execute(
+        """SELECT t.percent::float8 AS percent
+           FROM pbl.project_cards c JOIN pbl.team_marks t USING (project_id)
+           WHERE c.faculty_id = %s AND t.percent IS NOT NULL""", (account.user_id,))]
+    links = conn.execute(
+        """SELECT submission_link_id, subject, class_name, purpose, waiting, approved, graded
+           FROM pbl.link_progress
+           WHERE faculty_id = %s AND is_open
+           ORDER BY academic_year DESC, subject, class_name""", (account.user_id,)).fetchall()
+    return {"waiting": waiting, **counts, "to_grade": to_grade, "by_subject": by_subject, "percents": percents,
+            "links": links}
 
 
 def admin_home(conn, account: db.Account) -> dict:
@@ -115,12 +151,23 @@ def admin_home(conn, account: db.Account) -> dict:
     per_year = conn.execute(
         """SELECT academic_year,
                   count(*) FILTER (WHERE status = 'approved')  AS approved,
-                  count(*) FILTER (WHERE status = 'submitted') AS submitted
-           FROM pbl.projects GROUP BY academic_year ORDER BY academic_year""").fetchall()
+                  count(*) FILTER (WHERE status = 'submitted') AS submitted,
+                  count(*) FILTER (WHERE status = 'rejected')  AS rejected
+           FROM pbl.project_cards GROUP BY academic_year ORDER BY academic_year""").fetchall()
+    by_subject = conn.execute(
+        """SELECT s.code AS subject, count(c.project_id) AS projects
+           FROM pbl.subjects s LEFT JOIN pbl.project_cards c ON c.subject = s.code AND c.status <> 'rejected'
+           GROUP BY s.code ORDER BY projects DESC, s.code""").fetchall()
+    load = conn.execute(
+        """SELECT faculty, sum(waiting)::int AS waiting, sum(approved)::int AS approved
+           FROM pbl.link_progress
+           WHERE academic_year = pbl.current_academic_year()
+           GROUP BY faculty ORDER BY waiting DESC, approved DESC, faculty""").fetchall()
     recent = conn.execute(
         """SELECT project_id, title, subject, faculty, status, created_at
            FROM pbl.project_cards ORDER BY created_at DESC, project_id DESC LIMIT 6""").fetchall()
-    return {**projects, **users, "per_year": per_year, "recent": recent}
+    return {**projects, **users, "rejected": sum(y["rejected"] for y in per_year), "per_year": per_year,
+            "by_subject": by_subject, "load": load, "recent": recent}
 
 
 @router.get("/home")
@@ -138,23 +185,32 @@ def project_page(project_id: int, account: db.Account = session.anyone) -> dict:
     with session.transaction(account) as conn:
         who = access(conn, project_id, account)
         card = conn.execute("SELECT * FROM pbl.project_cards WHERE project_id = %s", (project_id,)).fetchone()
-        marks = conn.execute(
-            """SELECT p.marks::float8, s.max_marks::float8 FROM pbl.projects p
-               JOIN pbl.subjects s ON s.subject_id = p.subject_id WHERE p.project_id = %s""",
+        team = conn.execute(
+            "SELECT team_score::float8, max_marks::float8, graded, members FROM pbl.team_marks WHERE project_id = %s",
             (project_id,)).fetchone()
+        students = conn.execute(
+            """SELECT pm.user_id, u.name, u.prn, pm.is_leader, pm.marks::float8
+               FROM pbl.project_members pm JOIN pbl.users u USING (user_id)
+               WHERE pm.project_id = %s ORDER BY pm.is_leader DESC, u.name""", (project_id,)).fetchall()
         closest = None
         if card["status"] == "submitted":
             closest = conn.execute(
                 """SELECT q.closest_id, q.closest_title, q.closest_year, q.similarity, q.band
                    FROM pbl.review_queue q WHERE q.project_id = %s""", (project_id,)).fetchone()
-    # Marks: the team, the faculty member and the coordinator always; others only if
-    # the team has chosen to show them.
-    show_marks = who["involved"] or card["marks_public"]
+    # The team score: the team, the faculty member and the coordinator always; others
+    # only if the team has chosen to show it. Each student's own marks: that student,
+    # the faculty member and the coordinator; teammates don't see each other's.
+    show_score = who["involved"] or card["marks_public"]
+    sees_everyone = who["is_faculty"] or account.is_admin
+    mine = next((s["marks"] for s in students if s["user_id"] == account.user_id), None)
     return {
         **card,
-        "marks": marks["marks"] if show_marks else None,
-        "marks_hidden": not show_marks and marks["marks"] is not None,
-        "max_marks": marks["max_marks"],
+        "team_score": team["team_score"] if show_score else None,
+        "marks_hidden": not show_score and team["team_score"] is not None,
+        "max_marks": team["max_marks"],
+        "graded": team["graded"] if sees_everyone else None,
+        "my_marks": mine,
+        "students": students if sees_everyone else None,
         "is_member": who["is_member"],
         "is_faculty": who["is_faculty"],
         "can_change": who["involved"],
@@ -390,9 +446,49 @@ def remove_link(link_id: int, account: db.Account = session.anyone) -> dict:
     return {}
 
 
+# A submission link, as a student opens it ------------------------------------------------
+
+LINK_CODE = r"^[a-z0-9]{6,16}$"
+
+
+def find_link(conn, code: str) -> dict:
+    link = conn.execute(
+        """SELECT submission_link_id, code, faculty_id, faculty, subject, subject_name, academic_year,
+                  class_name, purpose, max_marks::float8, is_open, waiting, approved
+           FROM pbl.link_progress WHERE code = %s""", (code,)).fetchone()
+    if link is None:
+        raise HTTPException(404, "No submission link with this code. Check the link your faculty member sent.")
+    return link
+
+
+def open_link(conn, code: str) -> dict:
+    link = find_link(conn, code)
+    if not link["is_open"]:
+        raise HTTPException(422, "This submission link is closed. Ask your faculty member.")
+    return link
+
+
+@router.get("/s/{code}")
+def submission_link(code: str = PathParam(pattern=LINK_CODE), account: db.Account = session.anyone) -> dict:
+    with session.transaction(account) as conn:
+        link = find_link(conn, code)
+        is_owner = link["faculty_id"] == account.user_id
+        # The class's approved projects are open to everyone, as everywhere else; a
+        # student's own project shows whatever its status.
+        projects = conn.execute(
+            """SELECT c.project_id, c.title, c.members, c.status, c.project_type, c.tags, c.created_at,
+                      %s = ANY(c.member_ids) AS mine
+               FROM pbl.project_cards c
+               WHERE c.submission_link_id = %s AND (c.status = 'approved' OR %s = ANY(c.member_ids) OR %s)
+               ORDER BY mine DESC, c.title""",
+            (account.user_id, link["submission_link_id"], account.user_id, is_owner or account.is_admin)).fetchall()
+    live = next((p["project_id"] for p in projects if p["mine"] and p["status"] != "rejected"), None)
+    return {**link, "projects": projects, "my_project": live, "is_owner": is_owner}
+
+
 # Submitting a project -------------------------------------------------------------------
 
-def _submit(account: db.Account, title: str, abstract: str, subject_id: int, faculty_id: int, project_type: str,
+def _submit(account: db.Account, code: str, title: str, abstract: str, project_type: str,
             teammates: str, tags: list[str], github: str, demo: str,
             report: tuple[str, bytes], ppt: tuple[str, bytes] | None) -> dict:
     title, abstract = title.strip(), abstract.strip()
@@ -407,6 +503,9 @@ def _submit(account: db.Account, title: str, abstract: str, subject_id: int, fac
     links = [(label, check_url(url)) for label, url in (("GitHub", github), ("Working demo", demo)) if url.strip()]
     report_name, report_file = check_file("report", *report)
     ppt_name, ppt_file = check_file("ppt", *ppt) if ppt else (None, None)
+    # submit_project() checks the link again; this only saves uploading the files for nothing.
+    with session.transaction(account) as conn:
+        open_link(conn, code)
 
     vector = embed_text(project_text(title, abstract))
     # The files go to storage first, under a folder for the submitting student; the
@@ -418,26 +517,25 @@ def _submit(account: db.Account, title: str, abstract: str, subject_id: int, fac
     try:
         with session.transaction(account) as conn:
             new_id = conn.execute(
-                """SELECT pbl.submit_project(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                """SELECT pbl.submit_project(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                                              %s, %s, %s, %s, %s, %s) AS id""",
-                (account.user_id, title, abstract, subject_id, faculty_id, mates, project_type, tags,
+                (account.user_id, title, abstract, code, mates, project_type, tags,
                  [label for label, _ in links], [url for _, url in links], vector,
                  report_name, stored[0][0], len(report[1]),
                  ppt_name, stored[1][0] if ppt else None, len(ppt[1]) if ppt else None),
             ).fetchone()["id"]
-            faculty = conn.execute("SELECT name FROM pbl.users WHERE user_id = %s", (faculty_id,)).fetchone()
+            faculty = conn.execute("SELECT faculty FROM pbl.project_cards WHERE project_id = %s", (new_id,)).fetchone()
     except Exception:
         for path, _ in stored:
             storage.delete(path)
         raise
-    return {"id": new_id, "faculty": faculty["name"]}
+    return {"id": new_id, "faculty": faculty["faculty"]}
 
 
 @router.post("/submissions")
-async def submit_project(title: str = Form(max_length=200),
+async def submit_project(code: str = Form(max_length=16),
+                         title: str = Form(max_length=200),
                          abstract: str = Form(max_length=3000),
-                         subject_id: int = Form(),
-                         faculty_id: int = Form(),
                          project_type: Literal["software", "hardware", "both"] = Form(),
                          teammates: str = Form("", max_length=300),
                          tags: list[str] = Form([]),
@@ -453,7 +551,7 @@ async def submit_project(title: str = Form(max_length=200),
             files[kind] = (upload.filename, data)
     if "report" not in files:
         raise HTTPException(422, "Attach the project report (PDF).")
-    return await run_in_threadpool(_submit, account, title, abstract, subject_id, faculty_id, project_type,
+    return await run_in_threadpool(_submit, account, code, title, abstract, project_type,
                                    teammates, tags, github, demo, files["report"], files.get("ppt"))
 
 
@@ -467,7 +565,7 @@ def trends(account: db.Account = session.anyone) -> dict:
             """SELECT count(*) FILTER (WHERE status = 'approved')  AS projects,
                       count(DISTINCT academic_year)                AS years,
                       count(*) FILTER (WHERE status = 'submitted') AS waiting
-               FROM pbl.projects""").fetchone()
+               FROM pbl.project_cards""").fetchone()
         types = conn.execute(
             """SELECT project_type, count(*) AS projects FROM pbl.projects
                WHERE status = 'approved' GROUP BY project_type ORDER BY projects DESC""").fetchall()
@@ -480,10 +578,10 @@ def trends(account: db.Account = session.anyone) -> dict:
                WHERE tag IN (SELECT tag FROM pbl.tag_trends GROUP BY tag
                              ORDER BY sum(project_count) DESC, tag LIMIT 12)""").fetchall()
         load = conn.execute(
-            """SELECT u.name AS faculty,
+            """SELECT faculty,
                       count(*) AS projects,
-                      count(*) FILTER (WHERE p.status = 'submitted') AS waiting
-               FROM pbl.projects p JOIN pbl.users u ON u.user_id = p.faculty_id
-               WHERE p.academic_year = %s AND p.status <> 'rejected'
-               GROUP BY u.name ORDER BY projects DESC, u.name""", (year,)).fetchall()
+                      count(*) FILTER (WHERE status = 'submitted') AS waiting
+               FROM pbl.project_cards
+               WHERE academic_year = %s AND status <> 'rejected'
+               GROUP BY faculty ORDER BY projects DESC, faculty""", (year,)).fetchall()
     return {"year": year, "totals": totals, "types": types, "pairs": pairs, "tags": tags, "load": load}
