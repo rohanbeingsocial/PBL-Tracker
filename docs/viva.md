@@ -52,7 +52,7 @@ and a .pptx on the desktop for steps 4 and 5.
    isn't in the team: no marks on the project page. Switch to Rohan, who sees their own
    marks and the team score; turn on "Show our team score to everyone", and Krishna now
    sees 27.5 / 33.
-8. **Admin (1 min).** Sign in as `nshaikh@mitwpu.edu.in`. Subjects: CN-TH is usually out of
+8. **Admin (1 min).** Sign in as `admin@mitwpu.edu.in`. Subjects: CN-TH is usually out of
    5, and a new subject can be added with any maximum; a link starts with its subject's. People: add a student, which shows a
    temporary password once; that student has to choose a new one at their first sign-in.
    Try a Gmail address: refused, only `@mitwpu.edu.in` accounts.

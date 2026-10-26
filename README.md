@@ -206,9 +206,10 @@ All use the `SEED_PASSWORD` from your `.env`.
 |---|---|---|
 | Student | `1262241783` (Rohan Deogaonkar) | A submission very close to an earlier project, waiting for review, and an approved project |
 | Student | `1262241766` (Krishna Bhand) | No project this year: open a submission link to submit one |
+| Student | `1262241700` (Om Nemade) | No project in the sample data yet |
 | Faculty | `srao@mitwpu.edu.in` (Prof. S. Rao) | The ML-PBL link for TY ECE Div B, with Rohan's submission waiting |
 | Faculty | `riyer@mitwpu.edu.in` (Prof. R. Iyer) | Rohan's approved project, students not graded yet |
-| Admin | `nshaikh@mitwpu.edu.in` (Dr. N. Shaikh, PBL coordinator) | Everything, plus People and Subjects |
+| Admin | `admin@mitwpu.edu.in` (PBL coordinator) | Everything, plus People and Subjects |
 
 With `DEMO_SWITCHER=on`, the sign-in page lists these users and the sidebar gets a
 "Switch account" menu. Anyone who can open the app can then become any of them, the admin
@@ -274,8 +275,8 @@ tests/        database rules, privileges, sign-in, the API, the browser
 docs/         design, security, viva notes, demo output, screenshots
 ```
 
-The 60 projects, 126 students and 8 faculty members in `data/` are made up for testing,
-apart from the two demo students, who are on the team. Each project has a one-page sample
+The 60 projects, 127 students and 8 faculty members in `data/` are made up for testing,
+apart from the three demo students, who are the team. Each project has a one-page sample
 report. More in [data/README.md](data/README.md).
 
 ## Team

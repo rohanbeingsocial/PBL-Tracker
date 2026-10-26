@@ -18,7 +18,7 @@ from finder import auth, db, storage  # noqa: E402
 from finder.config import require  # noqa: E402
 
 LOGINS = {"student": "1262241783", "krishna": "1262241766", "faculty": "srao@mitwpu.edu.in",
-          "iyer": "riyer@mitwpu.edu.in", "admin": "nshaikh@mitwpu.edu.in"}
+          "iyer": "riyer@mitwpu.edu.in", "admin": "admin@mitwpu.edu.in"}
 PAGES = {
     "student": ["/home", "/reference", "/search", "/trends"],
     "faculty": ["/home", "/reference", "/search", "/trends", "/review", "/links"],

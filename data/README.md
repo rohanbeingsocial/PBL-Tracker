@@ -1,13 +1,13 @@
 # Sample data
 
-Made up for testing and the demo. Nothing here is a real person, apart from the two demo
-students `1262241783` (Rohan Deogaonkar) and `1262241766` (Krishna Bhand), who are on the
-team; their emails are made up.
+Made up for testing and the demo. Nothing here is a real person, apart from the three demo
+students `1262241783` (Rohan Deogaonkar), `1262241766` (Krishna Bhand) and `1262241700` (Om
+Nemade), who are the team; their emails are made up.
 
 | File | Rows | Columns |
 |---|---|---|
 | `faculty.csv` | 8 | name, email, is_active, is_admin |
-| `students.csv` | 126 | prn, name, email |
+| `students.csv` | 127 | prn, name, email |
 | `projects.csv` | 60 | academic_year, subject, class, purpose, title, abstract, faculty_email, status, type, members, tags, marks, review_note, links |
 
 `projects.csv` is laid out the way faculty usually keep a sheet: `members`, `tags`,
@@ -37,7 +37,7 @@ has something to show.
 
 `scripts/load_data.py` also gives every student and faculty member the password in
 `SEED_PASSWORD` from `.env`. Students sign in with their PRN, faculty with their email.
-Dr. N. Shaikh is the admin (PBL coordinator), and Dr. K. Menon, who has left, is
+The account called Admin is the PBL coordinator, and Dr. K. Menon, who has left, is
 switched off. That shared password is for sample data only: real users are added on the
 People page, which gives each person a temporary password they have to change.
 

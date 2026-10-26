@@ -40,7 +40,7 @@ expect.set_options(timeout=15_000)
 ROHAN, KRISHNA = "1262241783", "1262241766"
 TEAMMATES = "1032240105, 1032240106"
 LAUNDRY_TEAM = "1032240107, 1032240108"     # Rohan's teammates; the link takes teams of 3
-RAO, IYER, ADMIN = "srao@mitwpu.edu.in", "riyer@mitwpu.edu.in", "nshaikh@mitwpu.edu.in"
+RAO, IYER, ADMIN = "srao@mitwpu.edu.in", "riyer@mitwpu.edu.in", "admin@mitwpu.edu.in"
 CLASS = "TY ECE Div E2E"
 
 # Very close to a sample project, so approving it needs a note.
@@ -747,8 +747,8 @@ def test_admin_manage_people(open_as, made):
     page.get_by_role("button", name="Done").click()
 
     # Nobody can switch themselves off.
-    find.fill("Shaikh")
-    rows.filter(has_text="Dr. N. Shaikh").click()
+    find.fill("admin@mitwpu.edu.in")
+    rows.filter(has_text="admin@mitwpu.edu.in").click()
     expect(panel.get_by_role("button", name="Switch off")).to_be_disabled()
     expect(panel.get_by_role("button", name=re.compile("admin"))).to_have_count(0)
 

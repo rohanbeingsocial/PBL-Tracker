@@ -18,11 +18,13 @@ DEMO_ACCOUNTS = [
      "shows": "CCTV attendance project waiting for review, and the Smart Water Tank project"},
     {"login": "1262241766", "name": "Krishna Bhand", "role": "student",
      "shows": "No project this year yet: open a submission link to submit one"},
+    {"login": "1262241700", "name": "Om Nemade", "role": "student",
+     "shows": "No project in the sample data yet: open a submission link to submit one"},
     {"login": "srao@mitwpu.edu.in", "name": "Prof. S. Rao", "role": "faculty",
      "shows": "ML-PBL submission link for TY ECE Div B; reviews Rohan's CCTV attendance project"},
     {"login": "riyer@mitwpu.edu.in", "name": "Prof. R. Iyer", "role": "faculty",
      "shows": "Rohan's Smart Water Tank project, approved, students not graded yet"},
-    {"login": "nshaikh@mitwpu.edu.in", "name": "Dr. N. Shaikh", "role": "admin",
+    {"login": "admin@mitwpu.edu.in", "name": "Admin", "role": "admin",
      "shows": "PBL coordinator: people, subjects, whole department"},
 ]
 
