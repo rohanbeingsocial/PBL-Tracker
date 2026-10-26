@@ -1,34 +1,66 @@
 # PBL Tracker
 
-One place for every PBL project at MIT-WPU: who was in the team, which subject and class
-it was for, which faculty member approved it, what it was built with, its report,
-presentation and links, and the marks each student got. A faculty member makes a
-submission link for each class (subject, class, what the submission is for) and sends it
-to the students. Every project submitted through that link counts towards that class's
-submission; the faculty member approves or rejects each one, gives every student their
-own marks, and downloads the class's marks as a spreadsheet. While a team fills in the
-form, the closest past projects are shown **by meaning**, not just by matching words, so
-repeated ideas get noticed.
+Every PBL project at MIT-WPU in one PostgreSQL database. Faculty collect a class's
+projects through one submission link, approve them and mark each student. Anyone can
+search past projects by what they do, not only by their title.
 
-DBMS PBL, 2026-27. PostgreSQL 17 with pgvector (hosted on Supabase), files in a
-Backblaze B2 bucket, a FastAPI server with a React front end, psycopg 3, and the
-all-MiniLM-L6-v2 sentence embedding model.
+[![database tests](https://github.com/rohanbeingsocial/PBL-Tracker/actions/workflows/database-tests.yml/badge.svg)](https://github.com/rohanbeingsocial/PBL-Tracker/actions/workflows/database-tests.yml)
+![PostgreSQL 17](https://img.shields.io/badge/PostgreSQL-17-336791?logo=postgresql&logoColor=white)
+![pgvector](https://img.shields.io/badge/pgvector-0.8.7-336791)
+![Supabase](https://img.shields.io/badge/Supabase-hosted-3ECF8E?logo=supabase&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.143-009688?logo=fastapi&logoColor=white)
+![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)
+
+![Student dashboard](docs/screenshots/student-dashboard.png)
+
+DBMS PBL 2026-27, TY ECE, MIT-WPU.
 
 ## The problem
 
-Each semester a student does several PBLs, one per lab subject and sometimes one for a
-theory subject too. Teams are anywhere from 2 to 5 people, every subject marks out of a
-different total (33 for a lab, 5 for a theory mini project), and the reports and slides
-end up scattered across WhatsApp groups and pen drives. Nobody can easily check whether
-a "new" idea was done two years ago, and marks live in separate spreadsheets.
+A student does several PBLs each semester, one per lab subject. Every subject marks out
+of a different total (33 for a lab, 5 for a theory mini project). Reports end up in
+WhatsApp groups and pen drives, marks sit in separate spreadsheets, and nobody can easily
+check whether a "new" idea was done two years ago.
 
-A shared folder can't fix this: it can only search file names, can't refuse 34 marks on
-a subject out of 33, and can't tell that "cardiac risk estimation" and "heart disease
-prediction" are the same project.
+A shared folder can't fix this. It can't refuse 34 marks out of 33, can't stop a student
+from submitting twice, and can't tell that "cardiac risk estimation" and "heart disease
+prediction" are the same project. A database can.
+
+## How it works
+
+1. A faculty member makes a **submission link** for one class: subject, class, purpose,
+   what each student is marked out of and how many students a team can have. They send
+   the link to the class.
+2. Students sign in with their college account, open the link and submit the title,
+   abstract, team, stack and report (PDF). Similar past projects show up as they type.
+3. The faculty member approves or rejects each project, gives **each student their own
+   marks**, and downloads the class's marks as a CSV file.
+4. Approved projects join the searchable record for every year after.
+
+| Role | What they can do |
+|---|---|
+| Student | Submit through a link, see their own marks and the team score, search every approved project |
+| Faculty | Make and close submission links, approve or reject, mark each student, export marks |
+| Coordinator (admin) | See the whole department, add people and subjects, give temporary passwords |
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/submission-link.png" alt="Submitting through a link"><br><b>Submitting through a link.</b> Past projects close to the new idea are flagged while the team types.</td>
+    <td width="50%"><img src="docs/screenshots/project-page.png" alt="Project page"><br><b>Project page.</b> The report opens in the page, with the team, subject and dates beside it.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/faculty-dashboard.png" alt="Faculty dashboard"><br><b>Faculty dashboard.</b> Submissions waiting for review, each with its closest past project.</td>
+    <td width="50%"><img src="docs/screenshots/link-marks.png" alt="Marks for one class"><br><b>One class's marks.</b> Each student's marks and the team score. Download marks gives a CSV.</td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/trends.png" alt="Trends"><br><b>Trends.</b> Stacks used each year, and ideas that keep coming back.</td>
+    <td width="50%"><img src="docs/screenshots/admin-dashboard.png" alt="Coordinator overview"><br><b>Coordinator overview.</b> Projects per year, per subject and per faculty member.</td>
+  </tr>
+</table>
 
 ## Keyword search vs. meaning search
-
-Real results from the sample data in this repository:
 
 | Query | Keyword search finds | Meaning search finds |
 |---|---|---|
@@ -36,314 +68,198 @@ Real results from the sample data in this repository:
 | "Predict heart attack risk from patient health data" | nothing | Cardiac Risk Estimation (0.69), Heart Disease Prediction (0.62), Diabetes Risk Prediction (0.52) |
 | "Book borrowing system for the department library" | nothing | College Library Management (0.56), Department Library Book Tracker (0.54) |
 
-The cardiac project never uses the word "heart", so keyword search can't find it. In the
-60 sample projects the database finds 3 near-duplicate pairs and 14 more similar pairs
-across different years.
+![Meaning search](docs/screenshots/meaning-search.png)
 
-## What the app does
-
-| Page | Who | What |
-|---|---|---|
-| Dashboard | everyone | Students: where each of their projects is (submitted, approved, graded), their own marks, status chart, popular stacks, recently approved projects. Faculty: submissions waiting for review with how close each is to a past project, open submission links, projects by subject, spread of team scores, projects not graded yet. Admin: totals, projects per year by status, projects per subject, what each faculty member still has to review, latest submissions |
-| Search projects | everyone | Every approved project from every year, by name or by idea (keyword, meaning, or both merged with Reciprocal Rank Fusion), with subject, technology, type and year filters |
-| Project | everyone | The report opens on the left; on the right the team, subject, year, the faculty member who approved it, the dates, technologies, links, presentation and abstract |
-| Submission link (`/s/<code>`) | everyone | What the link is for (subject, class, faculty member, purpose), the class's approved projects, and, for a student whose team has no project here yet, the submit form: title, abstract, teammates, technologies, the report (PDF, required), and optionally the presentation, a GitHub link and a working demo link. The team can instead submit a saved project, one of its projects in another link: the form starts filled in from it and its files go with it unless new ones are attached. The closest past projects show up next to the form |
-| Trends | everyone | Most used technologies per year, software vs. hardware, ideas that keep coming back, faculty load |
-| Submission links | faculty | Make a link (subject, class, what it is for, what each student is marked out of, how many students a team can have), copy it to send to the class, close it when the deadline passes. Each link's page lists every project that came in with each student's marks, and downloads them as a CSV file |
-| Project, for its faculty member | faculty | Approve or reject with a note, then give each student their marks |
-| People | admin | Add students and faculty, give someone a temporary password, switch an account off, make a faculty member an admin |
-| Subjects | admin | Add subjects and set what each one is marked out of |
-| Your account | everyone | Change your password |
-
-Only MIT-WPU people can use it: every account has an `@mitwpu.edu.in` email, and
-nothing opens without signing in. Students sign in with their PRN or college email,
-faculty with their email. Passwords are checked inside PostgreSQL (bcrypt through
-pgcrypto). Light and dark themes are in the sidebar.
-
-Each student sees their own marks and the team score, which is the average of the team's
-marks once every member has been graded. The faculty member who made the link and the
-PBL coordinator see everyone's marks. The team can switch on "Show our team score to
-everyone" on its project page; a student's own marks are never shown to the rest of the
-class. A project still waiting for review, or rejected, is seen only by its team, its
-faculty member and the coordinator. Approved projects are open to the whole site.
-
-The team and its faculty member can replace the report, add, replace or remove the
-presentation (PowerPoint or PDF), and add or remove links, up to 20 MB per file.
-
-The app has two halves. `api/` is a small FastAPI server: every endpoint opens one
-transaction and runs the SQL. `web/` is the React front end (Vite, TypeScript) that
-calls it; `python -m api` serves both from one address once the front end is built.
+The cardiac project never uses the word "heart", so keyword search misses it. The
+all-MiniLM-L6-v2 model turns each title and abstract into 384 numbers, stored in a
+pgvector column; projects that mean the same thing get nearby numbers. "Name and idea"
+merges both rankings with Reciprocal Rank Fusion. In the 60 sample projects the database
+finds 3 near-duplicate pairs and 14 more similar pairs across different years.
 
 ## Database design
 
-9 tables in 3NF, 6 views, 6 triggers, 18 functions (6 of them trigger functions).
-Design notes, the normalisation walk-through and index choices are in
-[docs/design.md](docs/design.md).
+![ER diagram](docs/screenshots/er-diagram.png)
 
-```mermaid
-erDiagram
-    USERS    ||--o{ SUBMISSION_LINKS : "makes (faculty_id)"
-    SUBJECTS ||--o{ SUBMISSION_LINKS : "is for"
-    SUBMISSION_LINKS ||--o{ PROJECTS : collects
-    PROJECTS ||--o{ PROJECT_MEMBERS : has
-    USERS    ||--o{ PROJECT_MEMBERS : "works in"
-    PROJECTS ||--o{ PROJECT_TAGS : "tagged with"
-    TAGS     ||--o{ PROJECT_TAGS : groups
-    PROJECTS ||--o{ PROJECT_LINKS : has
-    PROJECTS ||--o{ PROJECT_FILES : has
-    USERS    ||--o{ PROJECT_FILES : uploads
+*ER diagram of schema `pbl`, taken from Supabase's Schema Visualizer.*
 
-    USERS {
-        int user_id PK
-        varchar name
-        varchar email UK
-        char prn UK "students only"
-        varchar role "student or faculty"
-        boolean is_admin
-        varchar password_hash "bcrypt"
-        boolean is_active
-    }
-    SUBJECTS {
-        int subject_id PK
-        varchar code UK
-        varchar name
-        numeric max_marks
-    }
-    SUBMISSION_LINKS {
-        int submission_link_id PK
-        varchar code UK "random, the /s/ URL"
-        int faculty_id FK
-        int subject_id FK
-        varchar academic_year
-        varchar class_name
-        varchar purpose
-        numeric max_marks
-        smallint min_members
-        smallint max_members "NULL: no limit"
-        boolean is_open
-    }
-    PROJECTS {
-        int project_id PK
-        int submission_link_id FK
-        varchar title
-        text abstract
-        varchar project_type "software, hardware, both"
-        varchar status "submitted, approved, rejected"
-        timestamptz decided_at
-        boolean marks_public
-        tsvector search_text "generated"
-        vector embedding "384 numbers"
-    }
-    PROJECT_MEMBERS {
-        int project_id PK, FK
-        int user_id PK, FK
-        boolean is_leader
-        numeric marks
-    }
-    TAGS {
-        int tag_id PK
-        varchar name UK
-    }
-    PROJECT_TAGS {
-        int project_id PK, FK
-        int tag_id PK, FK
-    }
-    PROJECT_LINKS {
-        int link_id PK
-        int project_id FK
-        varchar label
-        varchar url
-    }
-    PROJECT_FILES {
-        int file_id PK
-        int project_id FK
-        varchar kind "report or ppt, one of each"
-        varchar file_name
-        varchar storage_path UK
-        int size_bytes
-        int uploaded_by FK
-    }
-```
+| Object | Count | Names |
+|---|---|---|
+| Tables | 9, in 3NF | `users`, `subjects`, `submission_links`, `projects`, `project_members`, `project_tags`, `tags`, `project_links`, `project_files` |
+| Views | 6 | `project_cards`, `team_marks`, `link_progress`, `review_queue`, `repeated_ideas`, `tag_trends` |
+| Triggers | 6 | `check_submission_link`, `check_project`, `check_member`, `check_near_duplicate`, `clear_stale_embedding`, `keep_report` |
+| Functions | 18 | `submit_project`, `keyword_search`, `similar_projects`, `hybrid_search`, `sign_in` and 13 more |
+| Indexes | 11 | GIN for full text, HNSW for vectors, foreign keys, partial and expression indexes |
 
-Students and faculty share one `users` table with a `role` column, so a project's team
-(`project_members.user_id`) and the faculty member who made its link
-(`submission_links.faculty_id`) both point at `users`. A project's subject, faculty member
-and year are its link's, so `projects` only keeps `submission_link_id`. Marks belong to a
-student in a team, so they sit on `project_members`; the team score is worked out by the
-`team_marks` view, never stored. Tags cover the stack and anything else worth filtering on
-(ESP32, Flask, OpenCV); whether a project is software, hardware or both is its own column.
-The files themselves live in a Backblaze B2 bucket; `project_files` keeps the name, size,
-who uploaded it and where it is stored.
+Students and faculty share one `users` table. A project comes in through one submission
+link, which fixes its subject, faculty member and year. Students and projects are
+many-to-many through `project_members`, which also holds each student's marks; projects
+and tags through `project_tags`. The team score is never stored: the `team_marks` view
+works it out.
 
-### Rules the database enforces
+Some of the rules the database enforces (all of them are in
+[docs/design.md](docs/design.md#rules-the-database-enforces)):
 
 | Rule | How |
 |---|---|
-| A team has as many students as its link allows: the faculty member sets the fewest and the most, or leaves it at any size | `team_size_range` CHECK; `check_member` trigger refuses one student too many; `submit_project()` checks the whole team; `check_submission_link` refuses sizes that a team already in the link doesn't fit |
-| A student can be in any number of projects in a year | Nothing limits it, on purpose |
-| A student has one live project per submission link (a rejected one doesn't count, so the team can try again) | `check_member` trigger, with an advisory lock so two submits at once can't both get in |
-| Only students can be team members | `check_member` trigger |
-| One leader per team | Partial unique index |
-| A submission link belongs to a faculty user | `check_submission_link` trigger |
-| A link's code is random and comes from the database, never from the app | `gen_random_bytes()` default, and `pbl_app` has no rights on the column |
-| A closed link takes no new projects | `submit_project()` |
-| Each student's marks can't be negative or more than the link's maximum, which starts as the subject's (33 for a lab, 5 for a theory mini project) | CHECK + `check_member` trigger |
-| A link's maximum can't go below marks already given | `check_submission_link` trigger |
-| Only approved projects can be marked | `check_member` trigger |
-| The team score is the average of its members' marks, shown only once all of them have marks | `team_marks` view |
-| Status is submitted, then approved or rejected once; the trigger records the date | CHECK + `check_project` trigger, and a CHECK that `decided_at` is set exactly when it was decided |
-| Every account has an `@mitwpu.edu.in` email | `college_email` CHECK |
-| A project is submitted with its report; one report (a PDF) and at most one presentation per project; the report can be replaced but not removed | `submit_project()`, unique `(project_id, kind)`, `reports_are_pdf` CHECK, `keep_report` trigger |
-| Approving a near duplicate (similarity 0.70 or more) needs a review note | `check_near_duplicate` trigger, using pgvector |
-| A link's academic year looks like `2026-27`, and 27 follows 26 | Two named CHECK constraints (regex, then arithmetic) |
-| The same title can't be submitted twice through one link | Unique index on `(submission_link_id, lower(title))` |
-| Links start with http:// or https://, once per project | CHECK + unique constraint |
-| Files are up to 20 MB | CHECK on `size_bytes` |
-| Tag names are unique ignoring case | Unique index on `lower(name)` |
-| Students have a 10-digit PRN, faculty don't; only faculty can be admins | Two CHECK constraints on `users` |
-| Deleting a project removes its members, tags, links and file records; a user still in a team can't be deleted | `ON DELETE CASCADE` from projects only |
-| Editing a title or abstract throws away its old embedding | `clear_stale_embedding` trigger |
-| Only bcrypt hashes are stored | `hash_password()` with pgcrypto |
+| Marks from 0 to the link's maximum, only on approved projects | CHECK + `check_member` trigger |
+| One live project per student per submission link | `check_member` trigger, with an advisory lock |
+| Team size within the link's limits | `team_size_range` CHECK, `check_member`, `submit_project()` |
+| Submitted, then approved or rejected once, with the date recorded | `check_project` trigger + CHECK on `decided_at` |
+| Approving a near duplicate (similarity 0.70 or more) needs a note | `check_near_duplicate` trigger, using pgvector |
+| A project and its team, tags, links and files are saved together or not at all | `submit_project()`, one transaction |
+| One report per project, always a PDF, replaceable but not removable | unique `(project_id, kind)`, `reports_are_pdf` CHECK, `keep_report` trigger |
+| Only `@mitwpu.edu.in` accounts | `college_email` CHECK |
+| Link codes are random and never chosen by the app | `gen_random_bytes()` default, no grant on the column |
 
-### PostgreSQL features used
+**PostgreSQL features used:** pgvector with an HNSW index, full-text search on a generated
+`tsvector` column with a GIN index, pgcrypto for bcrypt and random codes, PL/pgSQL
+triggers and stored functions, advisory locks, column-level privileges, JSONB and arrays
+in views, partial and expression indexes, `LATERAL` joins and `FILTER` aggregates.
 
-pgvector with an HNSW index for meaning search; full-text search on a generated
-`tsvector` column with a GIN index; pgcrypto for bcrypt password hashing and random link
-codes; advisory locks; stored
-functions (`similar_projects`, `keyword_search`, `hybrid_search`, `submit_project`,
-`sign_in`); triggers in PL/pgSQL; a login role with column-level privileges; JSONB and
-arrays in the `project_cards` view; partial and expression indexes; `LATERAL` joins;
-`FILTER` aggregates.
+The normalisation walk-through, design decisions and index choices are in
+[docs/design.md](docs/design.md).
 
 ## Security
 
-The app connects as `pbl_app`, a login that can read what the pages show and change
-only what the app needs: a project's status, review note and whether its team score is
-public, each student's marks, its links and files, a submission link's class, purpose,
-maximum and whether it is open (never its code), subjects, and whether a user is
-switched on or an admin. It can't read password hashes,
-can't delete projects or users, and creates projects and users only through
-`submit_project()` and `create_user()`, which check everything first. Which signed-in
-person may do what (a student, the faculty member who owns the link, an admin) is checked by the
-server before it runs anything. Details: [docs/security.md](docs/security.md).
+- The app logs in as `pbl_app`. It can't read password hashes, can't delete projects or
+  users, and can change only the columns the pages need.
+- Passwords are bcrypt hashes (pgcrypto, cost 11), checked inside the database by
+  `sign_in()`. The app never sees a hash.
+- The tables live in their own schema, `pbl`, so Supabase's public REST API can't reach them.
+- No credentials are in this repository. They live in `.env`, which git ignores;
+  `.env.example` lists the names.
 
-No credentials are in this repository. They live in `.env`, which git ignores.
+Details: [docs/security.md](docs/security.md).
+
+## Tech stack
+
+| Part | Uses |
+|---|---|
+| Database | PostgreSQL 17 with pgvector and pgcrypto, hosted on Supabase |
+| Files | A private Backblaze B2 bucket for reports and presentations |
+| Server | Python 3.12, FastAPI, psycopg 3 |
+| Front end | React 19, TypeScript, Vite, pdf.js |
+| Meaning search | all-MiniLM-L6-v2, run with onnxruntime |
+| Hosting | Render |
 
 ## Running it
 
 You need Python 3.10+, Node.js 20+, and either a Supabase project or Docker.
 
-```
+```bash
 python -m venv .venv
-.venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt   # about 100 MB, mostly onnxruntime
-copy .env.example .env            # macOS/Linux: cp .env.example .env
+.venv\Scripts\activate              # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+copy .env.example .env              # macOS/Linux: cp; then fill it in (below)
 cd web && npm install && npm run build && cd ..
+
+python -m scripts.setup_db          # builds the schema in one transaction
+python -m scripts.load_data         # sample users, projects and reports
+python -m scripts.embed_projects    # embeddings for meaning search
+python -m api                       # http://127.0.0.1:8000
 ```
 
-### Database on Supabase
+<details>
+<summary><b>Database on Supabase</b></summary>
 
-1. Create a free project at [supabase.com](https://supabase.com). Note the database password.
-2. Click **Connect**, choose **Session pooler**, and copy the URI. It works on IPv4 networks,
-   which most college Wi-Fi is.
-3. In `.env`, set `ADMIN_DATABASE_URL` to that URI (user `postgres.<project-ref>`), choose a
+1. Create a free project at [supabase.com](https://supabase.com) and note the database password.
+2. Click **Connect**, choose **Session pooler** (it works on IPv4, which most college Wi-Fi is) and copy the URI.
+3. In `.env`, set `ADMIN_DATABASE_URL` to that URI (user `postgres.<project-ref>`). Choose a
    long random `PBL_APP_PASSWORD`, and set `DATABASE_URL` to the same URI with the user
    `pbl_app.<project-ref>` and that password. Keep `?sslmode=require` on both. Choose a
    `SEED_PASSWORD` too: every sample user gets it.
-4. Build and fill the database:
+4. Run the three scripts above. `--reset` on `setup_db` rebuilds from scratch.
 
-```
-python -m scripts.setup_db
-python -m scripts.load_data
-python -m scripts.embed_projects
-```
+`setup_db` creates the `pbl_app` login and sets its password from a hash made on your
+machine, so the plain password never reaches the server.
+</details>
 
-`setup_db` runs every file in `sql/` in one transaction (so a failure leaves nothing half
-built), creates the `pbl_app` login, and sets its password from a hash made on your
-machine. `--reset` rebuilds from scratch. `load_data` hashes a password for each sample
-user, which takes about 10 seconds.
+<details>
+<summary><b>Reports and presentations on Backblaze B2</b></summary>
 
-### Reports and presentations (Backblaze B2)
-
-The free plan has 10 GB, much more than Supabase Storage's 1 GB.
-
-1. Create a free account at [backblaze.com](https://www.backblaze.com/cloud-storage).
-2. **Buckets > Create a Bucket**: any name that isn't taken (bucket names are shared
-   across all of B2), files **Private**. Note the **Endpoint** shown on the bucket.
-3. **Application Keys > Add a New Application Key**: allow access to this bucket only,
-   Read and Write. The application key is shown once.
+1. Create a free account at [backblaze.com](https://www.backblaze.com/cloud-storage) (10 GB free).
+2. Create a bucket with files **Private** and note its **Endpoint**.
+3. Add an application key for this bucket only, with Read and Write.
 4. In `.env`, set `B2_ENDPOINT`, `B2_BUCKET`, `B2_KEY_ID` and `B2_APPLICATION_KEY`.
 
-The browser never talks to B2: files go through the server, which checks who is
-uploading and what kind of file it is. With these settings empty, files are kept in
-the `uploads/` folder instead, which is fine for working on a laptop.
+The browser never talks to B2: files go through the server, which checks who is uploading
+and what kind of file it is. With these settings empty, files go to `uploads/` instead.
+</details>
 
-### Database on your laptop (Docker)
+<details>
+<summary><b>Database on your laptop (Docker)</b></summary>
 
-```
+```bash
 docker compose up -d
 ```
 
-Put `POSTGRES_PASSWORD` in `.env` and point both URLs at `127.0.0.1:5434` (see
-`.env.example`), then run the same three scripts.
+Put `POSTGRES_PASSWORD` in `.env`, point both URLs at `127.0.0.1:5434` (see
+`.env.example`) and run the same three scripts.
+</details>
 
-### The app
+<details>
+<summary><b>Sample logins</b></summary>
 
-```
-python -m api                     # http://127.0.0.1:8000
-```
-
-While working on the front end, also run `npm run dev` in `web/` and open
-http://127.0.0.1:5173: it reloads on every save and passes `/api` calls to the Python
-server. After editing Python code, restart `python -m api`.
-
-Sign in with one of the sample users and the `SEED_PASSWORD` from your `.env`:
+All use the `SEED_PASSWORD` from your `.env`.
 
 | Role | Sign in as | Shows |
 |---|---|---|
 | Student | `1262241783` (Rohan Deogaonkar) | A submission very close to an earlier project, waiting for review, and an approved project |
 | Student | `1262241766` (Krishna Bhand) | No project this year: open a submission link to submit one |
-| Faculty | `srao@mitwpu.edu.in` (Prof. S. Rao) | The ML-PBL submission link for TY ECE Div B, with Rohan's submission waiting for review |
+| Faculty | `srao@mitwpu.edu.in` (Prof. S. Rao) | The ML-PBL link for TY ECE Div B, with Rohan's submission waiting |
 | Faculty | `riyer@mitwpu.edu.in` (Prof. R. Iyer) | Rohan's approved project, students not graded yet |
 | Admin | `nshaikh@mitwpu.edu.in` (Dr. N. Shaikh, PBL coordinator) | Everything, plus People and Subjects |
 
-**Demo account switcher.** With `DEMO_SWITCHER=on` in `.env`, the sign-in page lists
-these five users and the sidebar gets a "Switch account" menu. It signs in through the
-same `sign_in()` with `SEED_PASSWORD`, so switched-off accounts and changed passwords
-still apply. With it on, anyone who can open the app can become the admin: keep it off
-anywhere other people can reach the app.
+With `DEMO_SWITCHER=on`, the sign-in page lists these users and the sidebar gets a
+"Switch account" menu. Anyone who can open the app can then become any of them, the admin
+included, so use it only with sample data.
+</details>
 
-A sign-in lasts until you sign out, go 30 minutes without a click, or the server
-restarts. The first meaning search waits for the model, which takes about 10 seconds to
-load (the server starts loading it in the background at startup); after that a search
-takes milliseconds.
+While working on the front end, run `npm run dev` in `web/` as well and open
+http://127.0.0.1:5173. It reloads on every save and passes `/api` calls to the Python server.
+
+## Deployment
+
+The app runs on Render, the database on Supabase and the files on Backblaze B2.
+
+| Render setting | Value |
+|---|---|
+| Build command | `pip install -r requirements.txt && cd web && npm ci && npm run build` |
+| Start command | `uvicorn api.app:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'` |
+| Environment | `PYTHON_VERSION=3.12.6`, `DATABASE_URL` (the `pbl_app` login), `B2_ENDPOINT`, `B2_BUCKET`, `B2_KEY_ID`, `B2_APPLICATION_KEY`, `SEED_PASSWORD`, `DEMO_SWITCHER` |
+
+The owner login (`ADMIN_DATABASE_URL`) is never set on Render: the server only uses
+`pbl_app`. `--proxy-headers` lets the server see Render's HTTPS, so the session cookie is
+sent as `Secure`. The server peaks at about 230 MB, inside the free plan's 512 MB.
 
 ## Tests
 
-```
-pytest
+```bash
+pytest                                                       # 92 tests
+E2E_URL=http://127.0.0.1:8000 pytest tests/test_browser.py   # 23 browser tests
 ```
 
-87 tests: the rules, what `pbl_app` may and may not do, sign-in and passwords (50
-database tests), and the web server's sessions, every page for every role, submission
-links, submitting with a report, approving and grading each student, the marks export,
-who sees a project and its marks, links and files (37 API tests). The
-database tests run inside a transaction that is rolled back, so the data is untouched;
-the API tests that add or change anything put it back. GitHub Actions runs the database tests every night at 11:30 pm IST
-against a fresh pgvector container.
+- 53 database tests: the rules, what `pbl_app` may and may not do, sign-in and passwords.
+  They run inside a transaction that is rolled back.
+- 39 API tests: sessions, every page for every role, submitting, approving, marking and
+  the marks export. Anything they add is removed again.
+- 23 browser tests (Playwright) click through every page as a student, a faculty member
+  and the admin.
+
+GitHub Actions runs the database tests every night at 11:30 pm IST on a fresh pgvector
+container.
 
 ## Viva demo
 
-```
+```bash
 psql "<ADMIN_DATABASE_URL>" -f sql/demo.sql
 ```
 
-Twenty-one steps: submission links, each rule failing with its own error message,
-each student's marks and the team score, keyword vs. meaning search, the approval rule,
-`pbl_app`'s privileges, joins, views and the index plans. It
-all runs in a transaction that is rolled back, so it can be repeated. Expected output is
-in [docs/demo-output.txt](docs/demo-output.txt); the order to show things in and likely
-viva questions are in [docs/viva.md](docs/viva.md).
+21 steps: submission links, every rule failing with its own message, marks and the team
+score, keyword vs. meaning search, `pbl_app`'s privileges, joins, views and index plans.
+It runs in one transaction that is rolled back, so it can be repeated. Expected output:
+[docs/demo-output.txt](docs/demo-output.txt). Demo order and likely questions:
+[docs/viva.md](docs/viva.md).
 
 ## Repository layout
 
@@ -351,20 +267,16 @@ viva questions are in [docs/viva.md](docs/viva.md).
 sql/          01-07 build the database in order; demo.sql is the viva script
 scripts/      setup_db.py, load_data.py, embed_projects.py, sample_reports.py
 finder/       shared Python: settings, database access, file storage, embeddings
-api/          the FastAPI server: sessions, and the routes for each area
+api/          the FastAPI server: sessions and the routes for each area
 web/          the React front end (src/pages has one file per page)
-data/         sample faculty, students and projects (all made up)
-tests/        database rules, privileges, sign-in, the API
-docs/         design, security, viva notes, demo output
+data/         sample faculty, students and projects
+tests/        database rules, privileges, sign-in, the API, the browser
+docs/         design, security, viva notes, demo output, screenshots
 ```
 
-## Sample data
-
-The 60 projects, 126 students and 8 faculty members in `data/` are invented for testing.
-The topics are typical of engineering PBLs, and every name, PRN and email is made up,
-apart from the demo student, who carries a team member's name (Rohan Deogaonkar) with a
-made-up PRN and email. Each sample project has a one-page sample report. More in
-[data/README.md](data/README.md).
+The 60 projects, 126 students and 8 faculty members in `data/` are made up for testing,
+apart from the two demo students, who are on the team. Each project has a one-page sample
+report. More in [data/README.md](data/README.md).
 
 ## Team
 
