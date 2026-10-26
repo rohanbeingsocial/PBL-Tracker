@@ -25,7 +25,9 @@ thousands of projects.
 - Projects and **tags** are many-to-many through **project_tags**.
 - A project has any number of **links** (GitHub, working demo, video) and up to two **files**: exactly one report (a PDF) and at most one presentation. Each file row records who uploaded it.
 
-The ER diagram is in the README (GitHub draws it from the Mermaid source).
+![ER diagram](screenshots/er-diagram.png)
+
+*ER diagram of schema `pbl`, taken from Supabase's Schema Visualizer.*
 
 | Table | Primary key | Notable rules |
 |---|---|---|
@@ -38,6 +40,36 @@ The ER diagram is in the README (GitHub draws it from the Mermaid source).
 | project_tags | (project_id, tag_id) | link table |
 | project_links | link_id | http or https only; the same URL once per project |
 | project_files | file_id | one report and at most one ppt per project; reports are PDFs; the report can't be removed; 1 byte to 20 MB; storage_path unique |
+
+## Rules the database enforces
+
+| Rule | How |
+|---|---|
+| A team has as many students as its link allows: the faculty member sets the fewest and the most, or leaves it at any size | `team_size_range` CHECK; `check_member` trigger refuses one student too many; `submit_project()` checks the whole team; `check_submission_link` refuses sizes that a team already in the link doesn't fit |
+| A student can be in any number of projects in a year | Nothing limits it, on purpose |
+| A student has one live project per submission link (a rejected one doesn't count, so the team can try again) | `check_member` trigger, with an advisory lock so two submits at once can't both get in |
+| Only students can be team members | `check_member` trigger |
+| One leader per team | Partial unique index |
+| A submission link belongs to a faculty user | `check_submission_link` trigger |
+| A link's code is random and comes from the database, never from the app | `gen_random_bytes()` default, and `pbl_app` has no rights on the column |
+| A closed link takes no new projects | `submit_project()` |
+| Each student's marks can't be negative or more than the link's maximum, which starts as the subject's (33 for a lab, 5 for a theory mini project) | CHECK + `check_member` trigger |
+| A link's maximum can't go below marks already given | `check_submission_link` trigger |
+| Only approved projects can be marked | `check_member` trigger |
+| The team score is the average of its members' marks, shown only once all of them have marks | `team_marks` view |
+| Status is submitted, then approved or rejected once; the trigger records the date | CHECK + `check_project` trigger, and a CHECK that `decided_at` is set exactly when it was decided |
+| Every account has an `@mitwpu.edu.in` email | `college_email` CHECK |
+| A project is submitted with its report; one report (a PDF) and at most one presentation per project; the report can be replaced but not removed | `submit_project()`, unique `(project_id, kind)`, `reports_are_pdf` CHECK, `keep_report` trigger |
+| Approving a near duplicate (similarity 0.70 or more) needs a review note | `check_near_duplicate` trigger, using pgvector |
+| A link's academic year looks like `2026-27`, and 27 follows 26 | Two named CHECK constraints (regex, then arithmetic) |
+| The same title can't be submitted twice through one link | Unique index on `(submission_link_id, lower(title))` |
+| Links start with http:// or https://, once per project | CHECK + unique constraint |
+| Files are up to 20 MB | CHECK on `size_bytes` |
+| Tag names are unique ignoring case | Unique index on `lower(name)` |
+| Students have a 10-digit PRN, faculty don't; only faculty can be admins | Two CHECK constraints on `users` |
+| Deleting a project removes its members, tags, links and file records; a user still in a team can't be deleted | `ON DELETE CASCADE` from projects only |
+| Editing a title or abstract throws away its old embedding | `clear_stale_embedding` trigger |
+| Only bcrypt hashes are stored | `hash_password()` with pgcrypto |
 
 ## Normalisation
 
