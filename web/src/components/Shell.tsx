@@ -73,7 +73,7 @@ export function Shell({ me, path, go, waiting, demo, onSwitch, switchError, onSi
     <div className="app">
       <aside className="side">
         <div className="brand">
-          <div className="wordmark">MIT-WPU PBL Tracker</div>
+          <div className="wordmark">PBL Tracker</div>
         </div>
         <nav className="nav" aria-label="Pages">
           {navFor(me, waiting).map((item) => {
