@@ -150,6 +150,13 @@ def test_accounts_need_a_college_email(db):
     db.execute(insert, ("new.faculty@mitwpu.edu.in",))
 
 
+def test_only_an_admin_can_have_another_email(db):
+    db.execute("""INSERT INTO pbl.users (name, email, role, is_admin, password_hash)
+                  VALUES ('Coordinator', 'coordinator@gmail.com', 'faculty', true, '$2a$11$x')""")
+    remove = "UPDATE pbl.users SET is_admin = false WHERE email = 'coordinator@gmail.com'"
+    assert error_of(db, remove).diag.constraint_name == "college_email"
+
+
 def test_academic_year_format_and_sequence(db):
     insert = """INSERT INTO pbl.submission_links (faculty_id, subject_id, academic_year, class_name, purpose)
                 VALUES (%s, 1, %s, 'TY ECE Div A', 'Year check')"""

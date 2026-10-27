@@ -80,6 +80,14 @@ def test_create_user_only_takes_college_emails(app_db):
     assert err.diag.constraint_name == "college_email"
 
 
+def test_an_admin_can_sign_in_with_another_email(app_db):
+    temporary = app_db.execute(
+        "SELECT pbl.create_user('Coordinator', 'Coordinator@Gmail.com', '', 'faculty', true) AS t"
+    ).fetchone()["t"]
+    first = sign_in(app_db, "coordinator@gmail.com", temporary)
+    assert first["status"] == "ok" and first["is_admin"] is True
+
+
 def test_create_user_checks_role_and_prn(app_db):
     no_prn = error_of(app_db, "SELECT pbl.create_user('New Student', 'new.student@mitwpu.edu.in', '', 'student', false)")
     assert no_prn.diag.constraint_name == "students_have_a_prn"

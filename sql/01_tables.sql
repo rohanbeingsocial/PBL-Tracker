@@ -29,7 +29,8 @@ SET search_path = pbl, extensions;
 
 -- Everyone who signs in: students and faculty of MIT-WPU. Students sign in with
 -- their PRN or email, faculty with their email. Only college addresses
--- (@mitwpu.edu.in) are accepted. Emails are stored in lowercase only, so UNIQUE
+-- (@mitwpu.edu.in) are accepted, except for an admin: the PBL coordinator's account
+-- may be on another address. Emails are stored in lowercase only, so UNIQUE
 -- can't be dodged with capital letters. Only bcrypt hashes are stored, and the app's
 -- login can't read that column (06_security.sql).
 CREATE TABLE users (
@@ -45,7 +46,7 @@ CREATE TABLE users (
     is_active             BOOLEAN      NOT NULL DEFAULT true,     -- false after they leave; their projects stay
     created_at            TIMESTAMPTZ  NOT NULL DEFAULT now(),
 
-    CONSTRAINT college_email           CHECK (email LIKE '%@mitwpu.edu.in'),
+    CONSTRAINT college_email           CHECK (email LIKE '%@mitwpu.edu.in' OR is_admin),
     CONSTRAINT students_have_a_prn     CHECK ((role = 'student') = (prn IS NOT NULL)),
     CONSTRAINT only_faculty_are_admins CHECK (NOT is_admin OR role = 'faculty')
 );
