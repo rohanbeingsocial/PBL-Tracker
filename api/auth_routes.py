@@ -13,20 +13,21 @@ router = APIRouter(prefix="/api")
 # DEMO_SWITCHER is set: with it on, anyone who can open the app can become the
 # admin, so it is only for the sample data on your own laptop.
 DEMO_ON = optional("DEMO_SWITCHER").lower() in {"1", "true", "on", "yes"}
+# The pilot accounts. The admin's address isn't a college one, so it is kept in .env
+# (DEMO_ADMIN_LOGIN) instead of this public file.
 DEMO_ACCOUNTS = [
     {"login": "1262241783", "name": "Rohan Deogaonkar", "role": "student",
-     "shows": "CCTV attendance project waiting for review, and the Smart Water Tank project"},
+     "shows": "Open a submission link from faculty to submit a project"},
     {"login": "1262241766", "name": "Krishna Bhand", "role": "student",
-     "shows": "No project this year yet: open a submission link to submit one"},
+     "shows": "Open a submission link from faculty to submit a project"},
     {"login": "1262241700", "name": "Om Nemade", "role": "student",
-     "shows": "No project in the sample data yet: open a submission link to submit one"},
-    {"login": "srao@mitwpu.edu.in", "name": "Prof. S. Rao", "role": "faculty",
-     "shows": "ML-PBL submission link for TY ECE Div B; reviews Rohan's CCTV attendance project"},
-    {"login": "riyer@mitwpu.edu.in", "name": "Prof. R. Iyer", "role": "faculty",
-     "shows": "Rohan's Smart Water Tank project, approved, students not graded yet"},
-    {"login": "admin@mitwpu.edu.in", "name": "Admin", "role": "admin",
-     "shows": "PBL coordinator: people, subjects, whole department"},
+     "shows": "Open a submission link from faculty to submit a project"},
+    {"login": "prajakta.pardeshi@mitwpu.edu.in", "name": "Prajakta Pardeshi", "role": "faculty",
+     "shows": "Makes submission links, reviews and grades the projects sent through them"},
 ]
+if optional("DEMO_ADMIN_LOGIN"):
+    DEMO_ACCOUNTS.append({"login": optional("DEMO_ADMIN_LOGIN").strip().lower(), "name": "Admin", "role": "admin",
+                          "shows": "PBL coordinator: people, subjects, whole department"})
 
 
 def account_json(account: db.Account) -> dict:

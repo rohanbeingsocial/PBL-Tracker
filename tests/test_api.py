@@ -513,6 +513,6 @@ def test_demo_switcher_is_off_unless_turned_on(monkeypatch):
 def test_demo_switcher_only_signs_in_listed_accounts(monkeypatch):
     monkeypatch.setattr(auth_routes, "DEMO_ON", True)
     client = client_as(None)
-    assert client.post("/api/demo/sign-in", json={"login": "pjoshi@mitwpu.edu.in"}).status_code == 404
-    response = client.post("/api/demo/sign-in", json={"login": LOGINS["faculty"]})
-    assert response.status_code == 200 and response.json()["role"] == "faculty"
+    assert client.post("/api/demo/sign-in", json={"login": LOGINS["faculty"]}).status_code == 404
+    response = client.post("/api/demo/sign-in", json={"login": LOGINS["krishna"]})
+    assert response.status_code == 200 and response.json()["name"] == "Krishna Bhand"

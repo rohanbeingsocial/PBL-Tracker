@@ -124,7 +124,8 @@ def open_as(browser):
         context = browser.new_context(viewport={"width": width, "height": height}, accept_downloads=True)
         contexts.append(context)
         if login:
-            signed_in = context.request.post(f"{URL}/api/demo/sign-in", data={"login": login})
+            signed_in = context.request.post(f"{URL}/api/sign-in",
+                                             data={"login": login, "password": require("SEED_PASSWORD")})
             assert signed_in.ok, signed_in.text()
         page = context.new_page()
         page.on("pageerror", lambda e: errors.append(str(e)))
@@ -180,11 +181,8 @@ def test_sample_accounts_and_the_demo_switcher(open_as):
     page = open_as(None)
     page.get_by_role("button", name=re.compile("^Krishna Bhand")).click()
     expect(heading(page, "Hello, Krishna")).to_be_visible()
-    switch = page.get_by_label("Switch account (demo)")
-    switch.select_option(RAO)
-    expect(heading(page, "Hello, Prof. S. Rao")).to_be_visible()
-    switch.select_option(ADMIN)
-    expect(heading(page, "Overview")).to_be_visible()
+    page.get_by_label("Switch account (demo)").select_option(ROHAN)
+    expect(heading(page, "Hello, Rohan")).to_be_visible()
 
 
 @pytest.mark.parametrize("login", [ROHAN, RAO, ADMIN])
