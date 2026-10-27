@@ -157,6 +157,24 @@ def test_only_an_admin_can_have_another_email(db):
     assert error_of(db, remove).diag.constraint_name == "college_email"
 
 
+def test_a_link_takes_no_projects_after_its_last_date(db):
+    year = db.execute("SELECT pbl.current_academic_year() AS y").fetchone()["y"]
+    link = new_link(db, "DBMS-PBL", year, "Late submission")
+    early = "UPDATE pbl.submission_links SET closes_at = created_at - interval '1 hour' WHERE submission_link_id = %s"
+    assert error_of(db, early, (link,)).diag.constraint_name == "closes_after_it_opens"
+    code = db.execute("""UPDATE pbl.submission_links SET created_at = now() - interval '2 days',
+                                                         closes_at = now() - interval '1 minute'
+                         WHERE submission_link_id = %s RETURNING code""", (link,)).fetchone()["code"]
+    submit = """SELECT pbl.submit_project(%s, 'Hostel Laundry Slot Booking', %s, %s, '{}', 'software',
+                                          '{}', '{}', '{}', NULL, 'r.pdf', 'new/1/r.pdf', 100)"""
+    args = (user_id(db, ROHAN), "Students book a washing machine slot in the hostel laundry and get a reminder.", code)
+    err = error_of(db, submit, args)
+    assert err.diag.message_primary == "The last date to submit through this link has passed. Ask your faculty member."
+    db.execute("UPDATE pbl.submission_links SET closes_at = now() + interval '1 day' WHERE submission_link_id = %s",
+               (link,))
+    db.execute(submit, args)                        # a later last date lets the team submit
+
+
 def test_academic_year_format_and_sequence(db):
     insert = """INSERT INTO pbl.submission_links (faculty_id, subject_id, academic_year, class_name, purpose)
                 VALUES (%s, 1, %s, 'TY ECE Div A', 'Year check')"""

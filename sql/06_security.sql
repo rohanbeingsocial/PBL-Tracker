@@ -66,9 +66,9 @@ GRANT UPDATE (marks) ON project_members TO pbl_app;
 
 -- Faculty open and edit their submission links. The code isn't on the INSERT list,
 -- so it always comes from the table's random default.
-GRANT INSERT (faculty_id, subject_id, academic_year, class_name, purpose, max_marks, min_members, max_members)
+GRANT INSERT (faculty_id, subject_id, academic_year, class_name, purpose, max_marks, min_members, max_members, closes_at)
       ON submission_links TO pbl_app;
-GRANT UPDATE (class_name, purpose, max_marks, min_members, max_members, is_open) ON submission_links TO pbl_app;
+GRANT UPDATE (class_name, purpose, max_marks, min_members, max_members, is_open, closes_at) ON submission_links TO pbl_app;
 
 -- Links and files are added and removed after a project exists. A new report or
 -- presentation replaces the old one in place.

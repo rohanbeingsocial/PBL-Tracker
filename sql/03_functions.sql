@@ -176,6 +176,10 @@ BEGIN
     IF NOT v_link.is_open THEN
         RAISE EXCEPTION 'This submission link is closed. Ask your faculty member.' USING ERRCODE = 'check_violation';
     END IF;
+    IF v_link.closes_at <= now() THEN
+        RAISE EXCEPTION 'The last date to submit through this link has passed. Ask your faculty member.'
+              USING ERRCODE = 'check_violation';
+    END IF;
 
     SELECT string_agg(m, ', ') INTO v_unknown
     FROM unnest(p_member_prns) AS m

@@ -62,7 +62,8 @@ CREATE TABLE subjects (
 
 -- A faculty member opens a submission link for one class: the subject, the class
 -- (course, year, division), what the submission is for ('Semester PBL', 'LCA 1'),
--- what each student's marks are out of and how many students a team can have.
+-- what each student's marks are out of, how many students a team can have and the
+-- last date and time to submit.
 -- Students open the link, sign in with their college account and submit there, so
 -- every project counts towards exactly one class's submission. The code is the random
 -- part of the URL (/s/<code>); it is made here, never by the app, so nobody can pick
@@ -80,12 +81,14 @@ CREATE TABLE submission_links (
     min_members         SMALLINT     NOT NULL DEFAULT 1 CHECK (min_members >= 1),   -- students per team, leader included
     max_members         SMALLINT,                                          -- NULL: no upper limit
     is_open             BOOLEAN      NOT NULL DEFAULT true,                -- a closed link takes no new projects
+    closes_at           TIMESTAMPTZ,                                       -- last date and time to submit; NULL: none
     created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
 
     -- Postgres tests CHECK constraints in alphabetical order of their names, so the
     -- format check always runs before the ::int casts in the sequence check.
     CONSTRAINT academic_year_format   CHECK (academic_year ~ '^20[0-9]{2}-[0-9]{2}$'),
     CONSTRAINT academic_year_sequence CHECK (right(academic_year, 2)::int = (left(academic_year, 4)::int + 1) % 100),
+    CONSTRAINT closes_after_it_opens  CHECK (closes_at > created_at),
     CONSTRAINT team_size_range        CHECK (max_members >= min_members)
 );
 
