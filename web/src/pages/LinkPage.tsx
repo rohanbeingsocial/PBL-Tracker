@@ -3,7 +3,7 @@ import { api, linkUrl, type Band, type Status, type SubmissionLink } from "../ap
 import { Icon } from "../components/charts";
 import { AppLink, Closeness, Failed, Loading, Metrics, PageHead, StatusTag } from "../components/ui";
 import { useApp } from "../context";
-import { formatDay, teamSize } from "../format";
+import { formatDay, formatDeadline, localInput, teamSize } from "../format";
 import { useLoad } from "../hooks";
 import { CopyLink, joinClass, OpenTag, readTeam, splitClass } from "./Links";
 
@@ -33,6 +33,7 @@ function EditLink({ link, onSaved, onCancel }: { link: LinkData; onSaved: () => 
   const [max, setMax] = useState(String(link.max_marks));
   const [fewest, setFewest] = useState(String(link.min_members));
   const [most, setMost] = useState(link.max_members === null ? "" : String(link.max_members));
+  const [closes, setCloses] = useState(link.closes_at ? localInput(link.closes_at) : "");
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
@@ -42,7 +43,8 @@ function EditLink({ link, onSaved, onCancel }: { link: LinkData; onSaved: () => 
     try {
       await api(`/links/${link.submission_link_id}`, {
         method: "PUT",
-        body: { class_name: joinClass(cls), purpose: purpose.trim(), max_marks: Number(max), ...team, is_open: link.is_open },
+        body: { class_name: joinClass(cls), purpose: purpose.trim(), max_marks: Number(max), ...team, is_open: link.is_open,
+                closes_at: new Date(closes).toISOString() },
       });
       onSaved();
     } catch (e) {
@@ -66,7 +68,10 @@ function EditLink({ link, onSaved, onCancel }: { link: LinkData; onSaved: () => 
                aria-label="Fewest students in a team" placeholder="1" onChange={(e) => setFewest(e.target.value)} />
         <input className="input mono" style={{ width: 110 }} type="number" min={1} max={12} step={1} value={most}
                aria-label="Most students in a team" placeholder="No limit" onChange={(e) => setMost(e.target.value)} />
-        <button className="btn primary" disabled={!cls.year.trim() || !cls.branch.trim() || purpose.trim().length < 2} onClick={save}>Save</button>
+        <input className="input" style={{ width: 210 }} type="datetime-local" value={closes} aria-label="Last date to submit"
+               onChange={(e) => setCloses(e.target.value)} />
+        <button className="btn primary" disabled={!cls.year.trim() || !cls.branch.trim() || purpose.trim().length < 2 || !closes}
+                onClick={save}>Save</button>
         <button className="btn" onClick={onCancel}>Cancel</button>
       </div>
       {error && <div className="error-text" role="alert">{error}</div>}
@@ -123,7 +128,7 @@ export default function LinkPage({ id }: { id: number }) {
       await api(`/links/${id}`, {
         method: "PUT",
         body: { class_name: link!.class_name, purpose: link!.purpose, max_marks: link!.max_marks,
-                min_members: link!.min_members, max_members: link!.max_members, is_open: open },
+                min_members: link!.min_members, max_members: link!.max_members, is_open: open, closes_at: link!.closes_at },
       });
       toast(open ? "The link takes projects again." : "Link closed. It takes no new projects.");
       reload();
@@ -146,11 +151,12 @@ export default function LinkPage({ id }: { id: number }) {
     <>
       <PageHead title={`${link.subject} · ${link.class_name}`} back={back}
                 sub={[link.purpose, link.academic_year, `each student out of ${link.max_marks}`,
-                      teamSize(link.min_members, link.max_members)].filter(Boolean).join(" · ")} />
+                      teamSize(link.min_members, link.max_members),
+                      link.closes_at && `last date ${formatDeadline(link.closes_at)}`].filter(Boolean).join(" · ")} />
       <div className="stack" style={{ gap: 16 }}>
         <div className="card pad stack" style={{ gap: 12 }}>
           <div className="row wrap" style={{ gap: 10 }}>
-            <OpenTag open={link.is_open} />
+            <OpenTag link={link} />
             <span className="mono small grow" style={{ userSelect: "all", wordBreak: "break-all" }}>{linkUrl(link.code)}</span>
             <CopyLink code={link.code} />
             <a className="btn" href={`/api/links/${id}/marks.csv`}><Icon name="download" size={15} />Download marks</a>
@@ -159,7 +165,7 @@ export default function LinkPage({ id }: { id: number }) {
             ? <EditLink link={link} onCancel={() => setEditing(false)}
                         onSaved={() => { toast("Saved."); setEditing(false); reload(); }} />
             : <div className="row wrap" style={{ gap: 14 }}>
-                <button className="link" onClick={() => setEditing(true)}>Change class, purpose, marks or team size</button>
+                <button className="link" onClick={() => setEditing(true)}>Change class, purpose, marks, team size or last date</button>
                 <button className="link" disabled={busy} onClick={() => setOpen(!link.is_open)}>
                   {link.is_open ? "Close the link" : "Open it again"}
                 </button>

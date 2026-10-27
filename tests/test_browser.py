@@ -20,6 +20,7 @@ import io
 import os
 import re
 import secrets
+from datetime import date
 from pathlib import Path
 
 import psycopg
@@ -42,6 +43,8 @@ TEAMMATES = "1032240105, 1032240106"
 LAUNDRY_TEAM = "1032240107, 1032240108"     # Rohan's teammates; the link takes teams of 3
 RAO, IYER, ADMIN = "srao@mitwpu.edu.in", "riyer@mitwpu.edu.in", "admin@mitwpu.edu.in"
 CLASS = "TY ECE Div E2E"
+LAST_DATE = f"{date.today().year + 1}-03-31T17:30"        # typed into the link's last date box
+LAST_DATE_SHOWN = f"31 Mar {date.today().year + 1}, 17:30"
 
 # Very close to a sample project, so approving it needs a note.
 CCTV = "Attendance from classroom CCTV"
@@ -345,12 +348,18 @@ def test_faculty_make_a_submission_link(open_as, made):
     alert(page, "The most students in a team can't be fewer than the fewest.")
     page.get_by_label("Most students in a team").fill("3")         # Krishna and the two TEAMMATES
     make.click()
+    alert(page, "Choose the last date and time to submit.")
+    page.get_by_label("Last date to submit").fill(f"{date.today().year - 1}-03-31T17:30")
+    make.click()
+    alert(page, "The last date to submit has to be later than now.")
+    page.get_by_label("Last date to submit").fill(LAST_DATE)
+    make.click()
     toast(page, "Link made. Copy it and send it to the class.")
     expect(page).to_have_url(re.compile(r"/links/\d+$"))
     made["link_id"] = int(page.url.rsplit("/", 1)[1])
     expect(heading(page, f"ML-PBL · {CLASS}")).to_be_visible()
     expect(page.locator(".head p")).to_have_text(
-        f"{made['purpose']} · {current_year(page)} · each student out of 10 · teams of 3 students")
+        f"{made['purpose']} · {current_year(page)} · each student out of 10 · teams of 3 students · last date {LAST_DATE_SHOWN}")
     expect(page.get_by_text(f"Nothing submitted yet. Copy the link and send it to {CLASS}.")).to_be_visible()
 
     shown = page.locator(".mono.small.grow")
@@ -369,9 +378,11 @@ def test_faculty_make_a_submission_link(open_as, made):
     page.get_by_label("Branch").fill("ECE")
     page.get_by_label("Division").fill("Div E2E")         # same class: "Div" isn't doubled, case is ignored
     page.get_by_label("What it is for").fill(made["purpose"])
+    page.get_by_label("Last date to submit").fill(LAST_DATE)
     make.click()
     expect(page.get_by_role("alert")).to_be_visible()
     expect(page).to_have_url(URL + "/links")
+    expect(page.get_by_role("row").filter(has_text=made["purpose"])).to_contain_text(LAST_DATE_SHOWN)
     page.get_by_role("row").filter(has_text=made["purpose"]).click()
     expect(page).to_have_url(f"{URL}/links/{made['link_id']}")
 
@@ -550,16 +561,17 @@ def test_faculty_review_grade_change_close_and_export(open_as, made):
     expect(page.locator(".metric").filter(has_text="Graded")).to_contain_text("1 of 1")
 
     # Lowering the maximum below marks already given is refused; a new purpose is saved.
-    page.get_by_role("button", name="Change class, purpose, marks or team size").click()
+    page.get_by_role("button", name="Change class, purpose, marks, team size or last date").click()
     page.get_by_label("Each student out of").fill("5")
     page.get_by_role("button", name="Save").click()
     expect(page.get_by_role("alert")).to_be_visible()
     page.get_by_role("button", name="Cancel").click()
-    page.get_by_role("button", name="Change class, purpose, marks or team size").click()
+    page.get_by_role("button", name="Change class, purpose, marks, team size or last date").click()
     expect(page.get_by_label("Year of study")).to_have_value("TY")      # the class comes back in its three parts
     expect(page.get_by_label("Branch")).to_have_value("ECE")
     expect(page.get_by_label("Division")).to_have_value("E2E")
     expect(page.get_by_label("Fewest students in a team")).to_have_value("3")
+    expect(page.get_by_label("Last date to submit")).to_have_value(LAST_DATE)
     page.get_by_label("Fewest students in a team").fill("1")
     page.get_by_label("Most students in a team").fill("2")
     page.get_by_role("button", name="Save").click()

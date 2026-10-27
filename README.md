@@ -104,6 +104,7 @@ Some of the rules the database enforces (all of them are in
 | Marks from 0 to the link's maximum, only on approved projects | CHECK + `check_member` trigger |
 | One live project per student per submission link | `check_member` trigger, with an advisory lock |
 | Team size within the link's limits | `team_size_range` CHECK, `check_member`, `submit_project()` |
+| No projects after the link's last date to submit | `closes_after_it_opens` CHECK, `submit_project()` |
 | Submitted, then approved or rejected once, with the date recorded | `check_project` trigger + CHECK on `decided_at` |
 | Approving a near duplicate (similarity 0.70 or more) needs a note | `check_near_duplicate` trigger, using pgvector |
 | A project and its team, tags, links and files are saved together or not at all | `submit_project()`, one transaction |

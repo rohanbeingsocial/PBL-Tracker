@@ -109,6 +109,8 @@ export interface SubmissionLink {
   min_members: number;           // students per team, leader included
   max_members: number | null;    // null: no upper limit
   is_open: boolean;
+  closes_at: string | null;      // last date and time to submit; null for links made before last dates
+  takes_projects: boolean;       // open and the last date hasn't passed
   created_at: string;
   waiting: number;
   approved: number;

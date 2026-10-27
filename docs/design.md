@@ -19,7 +19,7 @@ thousands of projects.
 
 - A **user** is a student or a faculty member (`role`), always with an `@mitwpu.edu.in` email. Students have a PRN; faculty don't. A faculty member can also be an admin (the PBL coordinator).
 - A **subject** (DBMS-PBL, ML-PBL, CN-TH, ...) has its own usual `max_marks`.
-- A **submission link** is made by one faculty member (`faculty_id`, a user with the faculty role) for one subject, academic year, class (`TY ECE Div A`) and purpose (`Semester PBL`, `LCA 1`). It has a random `code` that forms its URL, a `max_marks` that starts as the subject's, the fewest and most students a team can have (`min_members`, `max_members`; any size until set), and can be closed. A faculty member has many links; a subject has many links.
+- A **submission link** is made by one faculty member (`faculty_id`, a user with the faculty role) for one subject, academic year, class (`TY ECE Div A`) and purpose (`Semester PBL`, `LCA 1`). It has a random `code` that forms its URL, a `max_marks` that starts as the subject's, the fewest and most students a team can have (`min_members`, `max_members`; any size until set), the last date and time to submit (`closes_at`), and can be closed. A faculty member has many links; a subject has many links.
 - A **project** comes in through one submission link. The link's faculty member approves or rejects it (`decided_at` records when).
 - Projects and students are many-to-many through **project_members**, which also stores who leads the team and each student's `marks`. A team has as many students as its link allows, and a student can be in any number of projects, but only one live project per link.
 - Projects and **tags** are many-to-many through **project_tags**.
@@ -53,6 +53,7 @@ thousands of projects.
 | A submission link belongs to a faculty user | `check_submission_link` trigger |
 | A link's code is random and comes from the database, never from the app | `gen_random_bytes()` default, and `pbl_app` has no rights on the column |
 | A closed link takes no new projects | `submit_project()` |
+| No projects after the link's last date and time; the last date comes after the link was made | `submit_project()`, `closes_after_it_opens` CHECK |
 | Each student's marks can't be negative or more than the link's maximum, which starts as the subject's (33 for a lab, 5 for a theory mini project) | CHECK + `check_member` trigger |
 | A link's maximum can't go below marks already given | `check_submission_link` trigger |
 | Only approved projects can be marked | `check_member` trigger |
@@ -144,7 +145,7 @@ Two columns look like they break this, and both are on purpose:
 | Embedding as a column on `projects` | One embedding per project, made from that project's own title and abstract. Ordinary queries list their columns, so the 1.5 KB of numbers is only read by the searches that need it. |
 | Python sends embeddings as a plain float array | The SQL functions cast it to `vector(384)`. The app needs no pgvector client library, and an array of the wrong length is rejected by the cast. |
 | `similarity_band()` function | The 0.70 / 0.50 / 0.35 cut-offs live in one place. The app, the views and the approval trigger all use it. |
-| Projects are created only through `submit_project()` | One call, one transaction: the project, team, tags, links, report and presentation are saved together, and if any PRN is wrong nothing is saved. It takes the link's code, refuses a closed link, and forces status `submitted`. Tags that don't exist yet are added. |
+| Projects are created only through `submit_project()` | One call, one transaction: the project, team, tags, links, report and presentation are saved together, and if any PRN is wrong nothing is saved. It takes the link's code, refuses a closed link or one past its last date, and forces status `submitted`. Tags that don't exist yet are added. |
 | Hybrid search with Reciprocal Rank Fusion | Keyword ranks and similarity scores aren't on the same scale, so they can't be added. RRF only uses each project's position in each list: `1/(60 + rank)`. |
 | Passwords hashed and checked inside the database (pgcrypto bcrypt, cost 11) | The hash never leaves the database and the app's login can't read it. One check takes about 80 ms, which a person doesn't notice and a guesser does. |
 

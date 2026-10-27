@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { ProjectType, Status } from "../api";
 import { AppLink, Failed, Loading, Notice, PageHead, Segmented, StatusTag, Tags } from "../components/ui";
 import { useApp } from "../context";
-import { teamSize } from "../format";
+import { formatDeadline, teamSize } from "../format";
 import { useLoad } from "../hooks";
 import { SubmitForm, type SavedProject } from "./Submit";
 
@@ -28,6 +28,8 @@ interface OpenLinkData {
   min_members: number;
   max_members: number | null;
   is_open: boolean;
+  closes_at: string | null;
+  takes_projects: boolean;
   waiting: number;
   projects: ClassProject[];
   my_project: number | null;
@@ -108,6 +110,13 @@ export default function OpenLink({ code }: { code: string }) {
     );
   } else if (!link.is_open) {
     top = <Notice tone="warn">This link is closed, so it takes no new projects. Ask {link.faculty} if you still need to submit.</Notice>;
+  } else if (!link.takes_projects) {
+    top = (
+      <Notice tone="warn">
+        The last date to submit here was {formatDeadline(link.closes_at!)}, so this link takes no new projects.
+        Ask {link.faculty} if you still need to submit.
+      </Notice>
+    );
   } else {
     top = <Submitting code={code} link={link} />;
   }
@@ -116,7 +125,8 @@ export default function OpenLink({ code }: { code: string }) {
     <>
       <PageHead title={`${link.purpose} · ${link.subject}`}
                 sub={[link.subject_name, link.class_name, link.faculty, link.academic_year, `each student out of ${link.max_marks}`,
-                      teamSize(link.min_members, link.max_members)].filter(Boolean).join(" · ")} />
+                      teamSize(link.min_members, link.max_members),
+                      link.closes_at && `last date ${formatDeadline(link.closes_at)}`].filter(Boolean).join(" · ")} />
       <div className="stack" style={{ gap: 20 }}>
         {top}
         <div className="stack" style={{ gap: 10 }}>

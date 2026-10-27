@@ -454,7 +454,8 @@ LINK_CODE = r"^[a-z0-9]{6,16}$"
 def find_link(conn, code: str) -> dict:
     link = conn.execute(
         """SELECT submission_link_id, code, faculty_id, faculty, subject, subject_name, academic_year,
-                  class_name, purpose, max_marks::float8, min_members, max_members, is_open, waiting, approved
+                  class_name, purpose, max_marks::float8, min_members, max_members, is_open, closes_at, takes_projects,
+                  waiting, approved
            FROM pbl.link_progress WHERE code = %s""", (code,)).fetchone()
     if link is None:
         raise HTTPException(404, "No submission link with this code. Check the link your faculty member sent.")
@@ -474,6 +475,8 @@ def open_link(conn, code: str) -> dict:
     link = find_link(conn, code)
     if not link["is_open"]:
         raise HTTPException(422, "This submission link is closed. Ask your faculty member.")
+    if not link["takes_projects"]:
+        raise HTTPException(422, "The last date to submit through this link has passed. Ask your faculty member.")
     return link
 
 

@@ -3,6 +3,7 @@ import { api, linkUrl, type SubmissionLink } from "../api";
 import { Icon } from "../components/charts";
 import { Failed, Loading, PageHead } from "../components/ui";
 import { useApp } from "../context";
+import { formatDeadline } from "../format";
 import { useLoad } from "../hooks";
 
 export function CopyLink({ code }: { code: string }) {
@@ -40,8 +41,10 @@ export function readTeam(fewest: string, most: string): { min_members: number; m
   return { min_members: min, max_members: max };
 }
 
-export function OpenTag({ open }: { open: boolean }) {
-  return <span className={`status ${open ? "approved" : "rejected"}`}>{open ? "Open" : "Closed"}</span>;
+// Open, closed by the faculty member, or still open but past its last date.
+export function OpenTag({ link }: { link: Pick<SubmissionLink, "is_open" | "takes_projects"> }) {
+  const text = link.takes_projects ? "Open" : link.is_open ? "Last date passed" : "Closed";
+  return <span className={`status ${link.takes_projects ? "approved" : "rejected"}`}>{text}</span>;
 }
 
 function NewLink({ onMade }: { onMade: (id: number) => void }) {
@@ -52,6 +55,7 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
   const [max, setMax] = useState("");
   const [fewest, setFewest] = useState("");
   const [most, setMost] = useState("");
+  const [closes, setCloses] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const chosen = ref.subjects.find((s) => s.subject_id === subject);
@@ -66,11 +70,14 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
     if (maxMarks !== null && !(maxMarks > 0)) return setError("Marks out of has to be more than 0.");
     const team = readTeam(fewest, most);
     if (typeof team === "string") return setError(team);
+    if (!closes) return setError("Choose the last date and time to submit.");
+    if (new Date(closes) <= new Date()) return setError("The last date to submit has to be later than now.");
     setBusy(true);
     setError(null);
     try {
       const made = await api<{ submission_link_id: number }>("/links", {
-        body: { subject_id: subject, class_name: joinClass(cls), purpose: purpose.trim(), max_marks: maxMarks, ...team },
+        body: { subject_id: subject, class_name: joinClass(cls), purpose: purpose.trim(), max_marks: maxMarks, ...team,
+                closes_at: new Date(closes).toISOString() },
       });
       onMade(made.submission_link_id);
     } catch (err) {
@@ -126,6 +133,10 @@ function NewLink({ onMade }: { onMade: (id: number) => void }) {
                  onChange={(e) => setMost(e.target.value)} />
           <small>Leave it empty for no limit.</small>
         </label>
+        <label className="field"><span>Last date to submit{req}</span>
+          <input className="input" type="datetime-local" value={closes} onChange={(e) => setCloses(e.target.value)} />
+          <small>The link takes no projects after this date and time.</small>
+        </label>
       </div>
       <div className="row" style={{ gap: 12 }}>
         <button className="btn primary" disabled={busy}>{busy ? "Making…" : "Make the link"}</button>
@@ -141,7 +152,7 @@ function LinkTable({ links, years }: { links: SubmissionLink[]; years?: boolean 
     <div className="card" style={{ overflow: "hidden" }}>
       <table className="table">
         <thead>
-          <tr><th>Subject</th><th>Class</th><th>For</th><th className="num">Out of</th><th className="num">Waiting</th>
+          <tr><th>Subject</th><th>Class</th><th>For</th><th>Last date</th><th className="num">Out of</th><th className="num">Waiting</th>
             <th className="num">Approved</th><th className="num">Graded</th><th className="num">Students</th><th /></tr>
         </thead>
         <tbody>
@@ -150,12 +161,13 @@ function LinkTable({ links, years }: { links: SubmissionLink[]; years?: boolean 
               <td className="mono strong">{l.subject}</td>
               <td>{l.class_name}</td>
               <td>{l.purpose}{years && <span className="muted"> · {l.academic_year}</span>}</td>
+              <td style={{ whiteSpace: "nowrap" }}>{l.closes_at ? formatDeadline(l.closes_at) : <span className="muted">None</span>}</td>
               <td className="num">{l.max_marks}</td>
               <td className="num" style={l.waiting ? { color: "var(--warn)", fontWeight: 600 } : undefined}>{l.waiting}</td>
               <td className="num">{l.approved}</td>
               <td className="num">{l.graded}</td>
               <td className="num">{l.students}</td>
-              <td className="num"><OpenTag open={l.is_open} /></td>
+              <td className="num"><OpenTag link={l} /></td>
             </tr>
           ))}
         </tbody>
